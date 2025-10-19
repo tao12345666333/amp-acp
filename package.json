@@ -1,0 +1,19 @@
+{
+  "name": "amp-acp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "amp-acp": "./src/index.js"
+  },
+  "description": "ACP adapter that bridges Amp CLI to Agent Client Protocol (Zed external agent)",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node src/index.js",
+    "lint": "echo 'no lint'",
+    "test": "node -e 'console.log(\"OK\")'"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "0.4.8"
+  }
+}

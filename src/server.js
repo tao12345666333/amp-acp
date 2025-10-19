@@ -56,94 +56,86 @@ export class AmpAcpAgent {
     s.cancelled = false;
     s.active = true;
 
-    // Start a fresh Amp process per turn (amp -x is single-turn). Avoid reusing prior proc to prevent races.
-    const proc = spawn('amp', ['-x', '--stream-json', '--stream-json-input'], {
+    // Start a fresh Amp process per turn. Amp does not expose the Claude Code JSON stream flags;
+    // we pipe plain text and stream stdout lines back to ACP.
+    const ampCmd = process.env.AMP_EXECUTABLE || 'amp';
+    const spawnEnv = { ...process.env };
+    if (process.env.AMP_PREFER_SYSTEM_PATH === '1' && spawnEnv.PATH) {
+      // Drop npx/npm-local node_modules/.bin segments so we pick the system 'amp'
+      const parts = spawnEnv.PATH.split(':').filter((p) => !/\bnode_modules\/\.bin\b|\/_npx\//.test(p));
+      spawnEnv.PATH = parts.join(':');
+    }
+    const proc = spawn(ampCmd, ['--no-notifications'], {
       cwd: params.cwd || process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: spawnEnv,
     });
-    const rl = readline.createInterface({ input: proc.stdout });
-    const queue = createJsonQueue(rl);
-    // Capture exit to clean state
-    proc.on('close', () => {
-      // Do not null out queue while a turn may still await next(); just signal end
-      try { queue?.end?.(); } catch {}
-    });
-    // Optionally log stderr (redirected to our stderr by default)
-    proc.stderr?.on('data', (d) => {
-      console.error(`[amp] ${d.toString()}`.trim());
-    });
-    s.proc = proc;
-    s.rl = rl;
-    s.queue = queue;
-    // Don't wait for init; amp will emit it before assistant/user events
 
-    // Build Amp user message JSON line from ACP prompt chunks
-    const content = [];
+    const rlOut = readline.createInterface({ input: proc.stdout });
+    const rlErr = readline.createInterface({ input: proc.stderr });
+
+    s.proc = proc;
+    s.rl = rlOut;
+    s.queue = null;
+
+    let hadOutput = false;
+
+    rlOut.on('line', async (line) => {
+      hadOutput = true;
+      if (!line) return;
+      try {
+        await this.client.sessionUpdate({
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: line },
+          },
+        });
+      } catch (e) {
+        console.error('[acp] sessionUpdate failed', e);
+      }
+    });
+
+    rlErr.on('line', (line) => {
+      console.error(`[amp] ${line}`);
+    });
+
+    // Build plain-text input for Amp from ACP prompt chunks
+    let textInput = '';
     for (const chunk of params.prompt) {
       switch (chunk.type) {
         case 'text':
-          content.push({ type: 'text', text: chunk.text });
+          textInput += chunk.text;
           break;
         case 'resource_link':
-          content.push({ type: 'text', text: chunk.uri });
+          textInput += `\n${chunk.uri}\n`;
           break;
         case 'resource':
           if ('text' in chunk.resource) {
-            content.push({ type: 'text', text: chunk.resource.uri });
-            content.push({ type: 'text', text: `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>` });
+            textInput += `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>\n`;
           }
           break;
         case 'image':
-          if (chunk.data) {
-            content.push({ type: 'image', source: { type: 'base64', data: chunk.data, media_type: chunk.mimeType } });
-          } else if (chunk.uri && chunk.uri.startsWith('http')) {
-            content.push({ type: 'image', source: { type: 'url', url: chunk.uri } });
-          }
+          // Images not supported by Amp CLI via stdin; ignore for now
           break;
         default:
           break;
       }
     }
+    if (!textInput.endsWith('\n')) textInput += '\n';
 
-    const userMsg = {
-      type: 'user',
-      message: { role: 'user', content },
-      parent_tool_use_id: null,
-      session_id: params.sessionId,
-    };
-
-    s.proc.stdin.write(JSON.stringify(userMsg) + '\n');
+    proc.stdin.write(textInput);
+    proc.stdin.end();
 
     try {
-      while (true) {
-        const msg = await s.queue.next();
-        if (msg == null) {
-          return { stopReason: s.cancelled ? 'cancelled' : 'refusal' };
-        }
-        switch (msg.type) {
-        case 'system':
-          // ignore init/compact/etc
-          break;
-        case 'assistant': {
-          const notifs = toAcpNotifications(msg, params.sessionId);
-          for (const n of notifs) await this.client.sessionUpdate(n);
-          break;
-        }
-        case 'user': {
-          // Skip echoing user messages to avoid duplicates in the client UI
-          break;
-        }
-        case 'result': {
-          if (msg.subtype === 'success') return { stopReason: 'end_turn' };
-          if (msg.subtype === 'error_max_turns') return { stopReason: 'max_turn_requests' };
-          return { stopReason: 'refusal' };
-        }
-        default:
-          break;
-        }
-      }
-      throw new Error('Session did not end in result');
+      await new Promise((resolve) => {
+        proc.on('close', () => {
+          try { rlOut.close(); } catch {}
+          try { rlErr.close(); } catch {}
+          resolve();
+        });
+      });
+      return { stopReason: s.cancelled ? 'cancelled' : (hadOutput ? 'end_turn' : 'refusal') };
     } finally {
       s.active = false;
       s.cancelled = false;

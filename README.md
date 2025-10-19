@@ -1,19 +1,39 @@
-# ACP adapter for Amp
+# ACP adapter for AmpCode
 
-Use Amp from ACP-compatible clients such as Zed.
+Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-compatible clients such as [Zed](https://zed.dev).
 
-## Install / Run
+## Prerequisites
 
-- Ensure `amp` CLI is installed and logged in.
-- Run the adapter:
+- [Amp CLI](https://ampcode.com) installed and authenticated (`amp login`)
+- Node.js (for running the adapter)
 
+## Installation
+
+Add to your Zed `settings.json` (open with `cmd+,` or `ctrl+,`):
+
+```json
+{
+  "agent_servers": {
+    "Amp": {
+      "command": "npx",
+      "args": ["-y", "amp-acp"],
+      "env": {
+        "AMP_EXECUTABLE": "path of AMP bin",
+        "AMP_PREFER_SYSTEM_PATH": "1"
+      }
+    }
+  }
+}
 ```
-amp-acp
-```
 
-Then connect from Zed via External Agents (ACP) and start a new Amp thread.
+Replace `"path of AMP bin"` with your Amp CLI path (e.g., `/usr/local/bin/amp`).
 
-## Notes
+## How it Works
 
-- Streams Amp's Claude Code–compatible JSON over ACP and renders messages in Zed.
-- Minimal adapter: tool permissions are handled by Amp.
+- Streams Amp's JSON over ACP
+- Renders Amp messages and interactions in Zed
+- Tool permissions are handled by Amp (no additional configuration needed)
+
+## Troubleshooting
+
+**Connection fails**: Ensure `amp login` was successful and the CLI is in your `AMP_EXECUTABLE`.

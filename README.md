@@ -1,5 +1,7 @@
 # ACP adapter for AmpCode
 
+![Screenshot](img/screenshot.png)
+
 Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-compatible clients such as [Zed](https://zed.dev).
 
 ## Prerequisites

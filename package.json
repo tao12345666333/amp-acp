@@ -14,6 +14,8 @@
     "test": "node -e 'console.log(\"OK\")'"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.4.8"
+    "@agentclientprotocol/sdk": "0.4.8",
+    "@sourcegraph/amp": "^0.0.1765685598-g5365e6",
+    "@sourcegraph/amp-sdk": "^0.1.0-20251214200908-g3251f72"
   }
 }

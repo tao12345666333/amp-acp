@@ -14,6 +14,7 @@ export class AmpAcpAgent {
       protocolVersion: 1,
       agentCapabilities: {
         promptCapabilities: { image: true, embeddedContext: true },
+        mcpCapabilities: { http: true, sse: true },
       },
       authMethods: [],
     };
@@ -22,12 +23,31 @@ export class AmpAcpAgent {
   async newSession(params) {
     const sessionId = `S-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+    // Convert ACP mcpServers to Amp SDK mcpConfig format
+    const mcpConfig = {};
+    if (Array.isArray(params.mcpServers)) {
+      for (const server of params.mcpServers) {
+        if ('type' in server && (server.type === 'http' || server.type === 'sse')) {
+          // HTTP/SSE type - Amp SDK may not support this directly
+          // Skip for now or handle if SDK supports it
+        } else {
+          // stdio type
+          mcpConfig[server.name] = {
+            command: server.command,
+            args: server.args,
+            env: server.env ? Object.fromEntries(server.env.map((e) => [e.name, e.value])) : undefined,
+          };
+        }
+      }
+    }
+
     this.sessions.set(sessionId, {
       threadId: null,
       controller: null,
       cancelled: false,
       active: false,
-      mode: 'default', // Default mode
+      mode: 'default',
+      mcpConfig,
     });
 
     return {
@@ -78,25 +98,16 @@ export class AmpAcpAgent {
       }
     }
 
-    const env = { ...process.env };
-    if (process.env.AMP_PREFER_SYSTEM_PATH === '1' && env.PATH) {
-       // Drop npx/npm-local node_modules/.bin segments so we pick the system 'amp' if needed
-       // Note: The SDK tries to find local @sourcegraph/amp first.
-       const parts = env.PATH.split(':').filter((p) => !/\bnode_modules\/\.bin\b|\/_npx\//.test(p));
-       env.PATH = parts.join(':');
-    }
-
     const options = {
       cwd: params.cwd || process.cwd(),
-      env: env,
-      mode: s.mode === 'plan' ? 'smart' : undefined, // 'smart' is default.
-      // If mode is 'plan', we might want to restrict tools, but SDK `mode` option is 'smart' | 'rush' | 'large'.
-      // 'plan' mode in ACP usually means read-only. We might need to handle this via permissions or just trust the user prompt?
-      // For now, we only map 'bypassPermissions'.
     };
 
     if (s.mode === 'bypassPermissions') {
-        options.dangerouslyAllowAll = true;
+      options.dangerouslyAllowAll = true;
+    }
+
+    if (Object.keys(s.mcpConfig).length > 0) {
+      options.mcpConfig = s.mcpConfig;
     }
 
     if (s.threadId) {
@@ -106,47 +117,27 @@ export class AmpAcpAgent {
     const controller = new AbortController();
     s.controller = controller;
 
-    let hadOutput = false;
-
     try {
-      const iterator = execute({
-        prompt: textInput,
-        options,
-        signal: controller.signal
-      });
-
-      for await (const message of iterator) {
-        hadOutput = true;
-
-        // Capture threadId if we don't have it yet
+      for await (const message of execute({ prompt: textInput, options, signal: controller.signal })) {
         if (!s.threadId && message.session_id) {
           s.threadId = message.session_id;
         }
 
-        // Log system messages
-        if (message.type === 'system') {
-           // console.log('Amp System:', message);
-        }
-
-        // Forward assistant messages to ACP
-        // We ignore user messages to avoid echoing input
         if (message.type === 'assistant') {
-            const notifications = toAcpNotifications(message, params.sessionId);
-            for (const n of notifications) {
-                try {
-                  await this.client.sessionUpdate(n);
-                } catch (e) {
-                  console.error('[acp] sessionUpdate failed', e);
-                }
+          for (const n of toAcpNotifications(message, params.sessionId)) {
+            try {
+              await this.client.sessionUpdate(n);
+            } catch (e) {
+              console.error('[acp] sessionUpdate failed', e);
             }
+          }
         }
 
-        if (message.type === 'result') {
-            if (message.is_error) {
-                console.error('[amp] Error result:', message.error);
-                // We might want to send this error to the user via ACP?
-                // The current implementation ends the turn.
-            }
+        if (message.type === 'result' && message.is_error) {
+          await this.client.sessionUpdate({
+            sessionId: params.sessionId,
+            update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Error: ${message.error}` } },
+          });
         }
       }
 

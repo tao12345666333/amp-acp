@@ -6,8 +6,9 @@ Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-comp
 
 ## Prerequisites
 
-- [Amp CLI](https://ampcode.com) installed and authenticated (`amp login`)
+- An Amp account (Note: [Amp Free](https://ampcode.com/free) is not supported)
 - Node.js (for running the adapter)
+- Authenticated Amp session (via `AMP_API_KEY` or `amp login`)
 
 ## Installation
 
@@ -20,15 +21,16 @@ Add to your Zed `settings.json` (open with `cmd+,` or `ctrl+,`):
       "command": "npx",
       "args": ["-y", "amp-acp"],
       "env": {
-        "AMP_EXECUTABLE": "path of AMP bin",
-        "AMP_PREFER_SYSTEM_PATH": "1"
+        "AMP_API_KEY": "sgamp_your_api_key_here"
       }
     }
   }
 }
 ```
 
-Replace `"path of AMP bin"` with your Amp CLI path (e.g., `/usr/local/bin/amp`).
+Replace `"sgamp_your_api_key_here"` with your Amp API Key (get it from [ampcode.com/settings](https://ampcode.com/settings)).
+
+Alternatively, if you have the Amp CLI installed and authenticated globally (`amp login`), you can omit the `env` block.
 
 ## How it Works
 
@@ -38,4 +40,4 @@ Replace `"path of AMP bin"` with your Amp CLI path (e.g., `/usr/local/bin/amp`).
 
 ## Troubleshooting
 
-**Connection fails**: Ensure `amp login` was successful and the CLI is in your `AMP_EXECUTABLE`.
+**Connection fails**: Ensure your `AMP_API_KEY` is correct or you are logged in via `amp login`.

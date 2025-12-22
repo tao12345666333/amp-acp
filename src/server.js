@@ -52,14 +52,11 @@ export class AmpAcpAgent {
 
     return {
       sessionId,
-      models: { currentModelId: 'default', availableModels: [{ modelId: 'default', name: 'Default', description: 'Amp default' }] },
       modes: {
         currentModeId: 'default',
         availableModes: [
-          { id: 'default', name: 'Always Ask', description: 'Prompts for permission on first use of each tool' },
-          { id: 'acceptEdits', name: 'Accept Edits', description: 'Automatically accepts file edit permissions for the session' },
-          { id: 'bypassPermissions', name: 'Bypass Permissions', description: 'Skips all permission prompts' },
-          { id: 'plan', name: 'Plan Mode', description: 'Analyze but not modify files or execute commands' },
+          { id: 'default', name: 'Default', description: 'Prompts for permission on first use of each tool' },
+          { id: 'bypass', name: 'Bypass', description: 'Skips all permission prompts' },
         ],
       },
     };
@@ -102,7 +99,7 @@ export class AmpAcpAgent {
       cwd: params.cwd || process.cwd(),
     };
 
-    if (s.mode === 'bypassPermissions') {
+    if (s.mode === 'bypass') {
       options.dangerouslyAllowAll = true;
     }
 

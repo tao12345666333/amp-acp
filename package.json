@@ -6,7 +6,7 @@
   "bin": {
     "amp-acp": "src/index.js"
   },
-  "description": "ACP adapter that bridges Amp CLI to Agent Client Protocol (Zed external agent)",
+  "description": "ACP adapter that bridges Amp Code to Agent Client Protocol (Zed external agent)",
   "license": "Apache-2.0",
   "scripts": {
     "start": "node src/index.js",

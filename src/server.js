@@ -50,7 +50,7 @@ export class AmpAcpAgent {
       mcpConfig,
     });
 
-    return {
+    const result = {
       sessionId,
       modes: {
         currentModeId: 'default',
@@ -60,6 +60,27 @@ export class AmpAcpAgent {
         ],
       },
     };
+
+    setImmediate(async () => {
+      try {
+        await this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: 'available_commands_update',
+            availableCommands: [
+              {
+                name: 'init',
+                description: 'Generate an AGENTS.md file for the project',
+              },
+            ],
+          },
+        });
+      } catch (e) {
+        console.error('[acp] failed to send available_commands_update', e);
+      }
+    });
+
+    return result;
   }
 
   async authenticate(_params) {
@@ -77,7 +98,18 @@ export class AmpAcpAgent {
     for (const chunk of params.prompt) {
       switch (chunk.type) {
         case 'text':
-          textInput += chunk.text;
+          if (chunk.text.trim() === '/init') {
+            textInput += `Please analyze this codebase and create an AGENTS.md file containing:
+1. Build/lint/test commands - especially for running a single test
+2. Architecture and codebase structure information, including important subprojects, internal APIs, databases, etc.
+3. Code style guidelines, including imports, conventions, formatting, types, naming conventions, error handling, etc.
+
+The file you create will be given to agentic coding tools (such as yourself) that operate in this repository. Make it about 20 lines long.
+
+If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLAUDE.md), Windsurf rules (.windsurfrules), Cline rules (.clinerules), Goose rules (.goosehints), or Copilot rules (in .github/copilot-instructions.md), make sure to include them. Also, first check if there is an existing AGENTS.md or AGENT.md file, and if so, update it instead of overwriting it.`;
+          } else {
+            textInput += chunk.text;
+          }
           break;
         case 'resource_link':
           textInput += `\n${chunk.uri}\n`;

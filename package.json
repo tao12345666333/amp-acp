@@ -1,6 +1,6 @@
 {
   "name": "amp-acp",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": false,
   "type": "module",
   "bin": {
@@ -8,6 +8,10 @@
   },
   "description": "ACP adapter that bridges Amp Code to Agent Client Protocol (Zed external agent)",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tao12345666333/amp-acp"
+  },
   "scripts": {
     "start": "node src/index.js",
     "lint": "echo 'no lint'",

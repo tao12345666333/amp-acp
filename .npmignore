@@ -1,0 +1,10 @@
+# GitHub files
+.github/
+
+# Development files
+.gitignore
+.npmignore
+
+# Documentation (optional, remove if you want to include docs)
+# AGENTS.md
+# README.md

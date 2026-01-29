@@ -22,16 +22,48 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Update npm to latest
         run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Build Binaries
+        run: |
+          mkdir -p dist
+          # Linux x64
+          bun build --compile --target=bun-linux-x64 --outfile=dist/amp-acp src/index.js
+          tar -czf dist/amp-acp-linux-x86_64.tar.gz -C dist amp-acp
+          rm dist/amp-acp
+
+          # macOS x64
+          bun build --compile --target=bun-darwin-x64 --outfile=dist/amp-acp src/index.js
+          tar -czf dist/amp-acp-darwin-x86_64.tar.gz -C dist amp-acp
+          rm dist/amp-acp
+
+          # macOS ARM64 (aarch64)
+          bun build --compile --target=bun-darwin-arm64 --outfile=dist/amp-acp src/index.js
+          tar -czf dist/amp-acp-darwin-aarch64.tar.gz -C dist amp-acp
+          rm dist/amp-acp
+
+          # Windows x64
+          bun build --compile --target=bun-windows-x64 --outfile=dist/amp-acp.exe src/index.js
+          cd dist && zip amp-acp-windows-x86_64.zip amp-acp.exe && rm amp-acp.exe && cd ..
+
       - name: Publish to npm
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip

@@ -1,5 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import { execute } from '@sourcegraph/amp-sdk';
+import { convertAcpMcpServersToAmpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 
 export class AmpAcpAgent {
@@ -24,22 +25,7 @@ export class AmpAcpAgent {
     const sessionId = `S-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
     // Convert ACP mcpServers to Amp SDK mcpConfig format
-    const mcpConfig = {};
-    if (Array.isArray(params.mcpServers)) {
-      for (const server of params.mcpServers) {
-        if ('type' in server && (server.type === 'http' || server.type === 'sse')) {
-          // HTTP/SSE type - Amp SDK may not support this directly
-          // Skip for now or handle if SDK supports it
-        } else {
-          // stdio type
-          mcpConfig[server.name] = {
-            command: server.command,
-            args: server.args,
-            env: server.env ? Object.fromEntries(server.env.map((e) => [e.name, e.value])) : undefined,
-          };
-        }
-      }
-    }
+    const mcpConfig = convertAcpMcpServersToAmpConfig(params.mcpServers);
 
     this.sessions.set(sessionId, {
       threadId: null,

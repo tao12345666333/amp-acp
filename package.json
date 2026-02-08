@@ -4,7 +4,6 @@
   "private": false,
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "bin": {
     "amp-acp": "dist/index.js"
   },
@@ -18,10 +17,10 @@
     "url": "https://github.com/tao12345666333/amp-acp"
   },
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "bun build src/index.ts --target=bun --outdir=dist --entry-naming=[dir]/[name].js",
+    "start": "bun dist/index.js",
     "lint": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json --outDir dist-test && node --test dist-test/mcp-config.test.js dist-test/mcp-integration.test.js"
+    "test": "bun test src/"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.4.8",
@@ -29,7 +28,7 @@
     "@sourcegraph/amp-sdk": "^0.1.0-20251214200908-g3251f72"
   },
   "devDependencies": {
-    "@types/node": "^25.2.1",
+    "@types/bun": "^1.2.5",
     "typescript": "^5.9.3"
   }
 }

@@ -24,10 +24,9 @@ import {
 import { execute, type StreamMessage } from '@sourcegraph/amp-sdk';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
-import { createRequire } from 'module';
+import packageJson from '../package.json';
 
-const require = createRequire(import.meta.url);
-const { version: PACKAGE_VERSION } = require('../package.json');
+const PACKAGE_VERSION: string = packageJson.version;
 
 interface SessionState {
   threadId: string | null;

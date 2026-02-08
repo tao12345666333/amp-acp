@@ -1,10 +1,10 @@
 # AGENTS.md
 
 ## Commands
-- `npm run build` — Compile TypeScript to `dist/`
-- `npm start` or `node dist/index.js` — Run the ACP adapter
-- `npm run lint` — Type-check with `tsc --noEmit`
-- `npm test` — Compile and run tests
+- `bun run build` — Bundle TypeScript to `dist/index.js` (single file, Bun target)
+- `bun start` or `bun dist/index.js` — Run the ACP adapter
+- `bun run lint` — Type-check with `tsc --noEmit`
+- `bun test src/` — Run tests with Bun's built-in test runner
 
 ## Architecture
 This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-compatible clients like Zed.

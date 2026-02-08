@@ -18,9 +18,12 @@
   },
   "scripts": {
     "build": "bun build src/index.ts --target=bun --outdir=dist --entry-naming=[dir]/[name].js",
+    "build:binary": "bun build src/index.ts --compile --outfile dist/amp-acp",
     "start": "bun dist/index.js",
     "lint": "tsc --noEmit",
-    "test": "bun test src/"
+    "test": "bun test src/",
+    "test:binary": "bun build src/index.ts --compile --outfile dist/amp-acp-test && bun test test/binary.test.ts",
+    "test:all": "bun run test && bun run test:binary"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.4.8",

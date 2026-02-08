@@ -128,6 +128,32 @@ You can configure multiple MCP servers to extend Amp's capabilities:
 
 For more details, see [docs/mcp-passthrough.md](docs/mcp-passthrough.md).
 
+## Using Pre-built Binaries
+
+Pre-built binaries are available on the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page for:
+
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| Linux | x64 | `amp-acp-linux-x64` |
+| Linux | arm64 | `amp-acp-linux-arm64` |
+| macOS | x64 (Intel) | `amp-acp-darwin-x64` |
+| macOS | arm64 (Apple Silicon) | `amp-acp-darwin-arm64` |
+| Windows | x64 | `amp-acp-windows-x64.exe` |
+
+Download the binary for your platform, make it executable (`chmod +x` on Linux/macOS), and configure Zed to use it:
+
+```json
+{
+  "agent_servers": {
+    "Amp": {
+      "command": "/path/to/amp-acp-darwin-arm64"
+    }
+  }
+}
+```
+
+These are standalone executables with no runtime dependencies — no Node.js or Bun required.
+
 ## Troubleshooting
 
 **Adapter doesn't start**: Make sure you have Node.js 18 or later installed. Run `node --version` to check.

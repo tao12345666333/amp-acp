@@ -21,7 +21,7 @@ jobs:
             os: ubuntu-latest
             artifact: amp-acp-linux-arm64
           - target: bun-darwin-x64
-            os: macos-13
+            os: ubuntu-latest
             artifact: amp-acp-darwin-x64
           - target: bun-darwin-arm64
             os: macos-latest

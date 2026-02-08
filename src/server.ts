@@ -1,15 +1,50 @@
-import { RequestError } from '@agentclientprotocol/sdk';
-import { execute } from '@sourcegraph/amp-sdk';
-import { convertAcpMcpServersToAmpConfig } from './mcp-config.js';
+import {
+  RequestError,
+  type AgentSideConnection,
+  type Agent,
+  type InitializeRequest,
+  type InitializeResponse,
+  type NewSessionRequest,
+  type NewSessionResponse,
+  type PromptRequest,
+  type PromptResponse,
+  type AuthenticateRequest,
+  type AuthenticateResponse,
+  type CancelNotification,
+  type SetSessionModeRequest,
+  type SetSessionModeResponse,
+  type SetSessionModelRequest,
+  type SetSessionModelResponse,
+  type ReadTextFileRequest,
+  type ReadTextFileResponse,
+  type WriteTextFileRequest,
+  type WriteTextFileResponse,
+  type ClientCapabilities,
+} from '@agentclientprotocol/sdk';
+import { execute, type StreamMessage } from '@sourcegraph/amp-sdk';
+import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 
-export class AmpAcpAgent {
-  constructor(client) {
+interface SessionState {
+  threadId: string | null;
+  controller: AbortController | null;
+  cancelled: boolean;
+  active: boolean;
+  mode: string;
+  mcpConfig: AmpMcpConfig;
+  cwd: string;
+}
+
+export class AmpAcpAgent implements Agent {
+  private client: AgentSideConnection;
+  sessions = new Map<string, SessionState>();
+  private clientCapabilities?: ClientCapabilities;
+
+  constructor(client: AgentSideConnection) {
     this.client = client;
-    this.sessions = new Map();
   }
 
-  async initialize(request) {
+  async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
     return {
       protocolVersion: 1,
@@ -21,10 +56,9 @@ export class AmpAcpAgent {
     };
   }
 
-  async newSession(params) {
+  async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
     const sessionId = `S-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // Convert ACP mcpServers to Amp SDK mcpConfig format
     const mcpConfig = convertAcpMcpServersToAmpConfig(params.mcpServers);
 
     this.sessions.set(sessionId, {
@@ -34,9 +68,10 @@ export class AmpAcpAgent {
       active: false,
       mode: 'default',
       mcpConfig,
+      cwd: params.cwd || process.cwd(),
     });
 
-    const result = {
+    const result: NewSessionResponse = {
       sessionId,
       modes: {
         currentModeId: 'default',
@@ -69,17 +104,16 @@ export class AmpAcpAgent {
     return result;
   }
 
-  async authenticate(_params) {
+  async authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse> {
     throw RequestError.authRequired();
   }
 
-  async prompt(params) {
+  async prompt(params: PromptRequest): Promise<PromptResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
     s.cancelled = false;
     s.active = true;
 
-    // Build plain-text input for Amp from ACP prompt chunks
     let textInput = '';
     for (const chunk of params.prompt) {
       switch (chunk.type) {
@@ -106,15 +140,14 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           }
           break;
         case 'image':
-          // Images not supported by Amp SDK yet via simple prompt string; ignore for now
           break;
         default:
           break;
       }
     }
 
-    const options = {
-      cwd: params.cwd || process.cwd(),
+    const options: Record<string, unknown> = {
+      cwd: s.cwd,
     };
 
     if (s.mode === 'bypass') {
@@ -158,7 +191,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
       return { stopReason: s.cancelled ? 'cancelled' : 'end_turn' };
     } catch (err) {
-      if (s.cancelled || (err.name === 'AbortError') || err.message.includes('aborted')) {
+      if (s.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };
       }
       console.error('[amp] Execution error:', err);
@@ -170,25 +203,24 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
   }
 
-  async cancel(params) {
+  async cancel(params: CancelNotification): Promise<void> {
     const s = this.sessions.get(params.sessionId);
-    if (!s) return {};
+    if (!s) return;
     if (s.active && s.controller) {
       s.cancelled = true;
       s.controller.abort();
     }
-    return {};
   }
 
-  async setSessionModel(_params) { return {}; }
+  async setSessionModel(_params: SetSessionModelRequest): Promise<SetSessionModelResponse> { return {}; }
 
-  async setSessionMode(params) {
+  async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
     s.mode = params.modeId;
     return {};
   }
 
-  async readTextFile(params) { return this.client.readTextFile(params); }
-  async writeTextFile(params) { return this.client.writeTextFile(params); }
+  async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> { return this.client.readTextFile(params); }
+  async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> { return this.client.writeTextFile(params); }
 }

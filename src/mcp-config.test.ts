@@ -1,5 +1,4 @@
-import assert from 'node:assert';
-import { describe, it } from 'node:test';
+import { describe, it, expect } from 'bun:test';
 import { convertAcpMcpServersToAmpConfig } from './mcp-config.js';
 import type { McpServer } from '@agentclientprotocol/sdk';
 
@@ -17,7 +16,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         filesystem: {
           command: '/path/to/mcp-server',
           args: ['--stdio'],
@@ -41,7 +40,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         filesystem: {
           command: '/path/to/mcp-server',
           args: ['--stdio'],
@@ -67,7 +66,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         exa: {
           url: 'https://mcp.exa.ai/mcp',
           headers: undefined,
@@ -90,7 +89,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         'api-server': {
           url: 'https://api.example.com/mcp',
           headers: {
@@ -115,7 +114,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         'event-stream': {
           url: 'https://events.example.com/mcp',
           headers: {
@@ -151,7 +150,7 @@ describe('MCP Configuration Passthrough', () => {
 
       const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
 
-      assert.deepStrictEqual(result, {
+      expect(result).toEqual({
         playwright: {
           command: 'npx',
           args: ['-y', '@playwright/mcp@latest', '--headless'],
@@ -174,17 +173,17 @@ describe('MCP Configuration Passthrough', () => {
   describe('Edge cases', () => {
     it('should handle empty mcpServers array', () => {
       const result = convertAcpMcpServersToAmpConfig([]);
-      assert.deepStrictEqual(result, {});
+      expect(result).toEqual({});
     });
 
     it('should handle undefined mcpServers', () => {
       const result = convertAcpMcpServersToAmpConfig(undefined);
-      assert.deepStrictEqual(result, {});
+      expect(result).toEqual({});
     });
 
     it('should handle null mcpServers', () => {
       const result = convertAcpMcpServersToAmpConfig(null);
-      assert.deepStrictEqual(result, {});
+      expect(result).toEqual({});
     });
   });
 });

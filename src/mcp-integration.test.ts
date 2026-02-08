@@ -1,5 +1,4 @@
-import assert from 'node:assert';
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, expect } from 'bun:test';
 import { AmpAcpAgent } from './server.js';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
@@ -36,7 +35,7 @@ describe('AmpAcpAgent MCP Integration', () => {
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession?.mcpConfig, {
+    expect(storedSession?.mcpConfig).toEqual({
       exa: {
         url: 'https://mcp.exa.ai/mcp',
         headers: undefined,
@@ -78,11 +77,11 @@ describe('AmpAcpAgent MCP Integration', () => {
     const storedSession = agent.sessions.get(session.sessionId);
     const mcpConfig = storedSession!.mcpConfig;
 
-    assert.strictEqual(mcpConfig.playwright?.command, 'npx');
-    assert.deepStrictEqual(mcpConfig.playwright?.args, ['-y', '@playwright/mcp@latest', '--headless']);
-    assert.strictEqual(mcpConfig.exa?.url, 'https://mcp.exa.ai/mcp?tools=web_search_exa');
-    assert.strictEqual(mcpConfig.sourcegraph?.url, 'https://sourcegraph.example.com/.api/mcp/v1');
-    assert.strictEqual(mcpConfig.monday?.url, 'https://mcp.monday.com/sse');
+    expect(mcpConfig.playwright?.command).toBe('npx');
+    expect(mcpConfig.playwright?.args).toEqual(['-y', '@playwright/mcp@latest', '--headless']);
+    expect(mcpConfig.exa?.url).toBe('https://mcp.exa.ai/mcp?tools=web_search_exa');
+    expect(mcpConfig.sourcegraph?.url).toBe('https://sourcegraph.example.com/.api/mcp/v1');
+    expect(mcpConfig.monday?.url).toBe('https://mcp.monday.com/sse');
   });
 
   it('should correctly convert headers from array to object format', async () => {
@@ -103,7 +102,7 @@ describe('AmpAcpAgent MCP Integration', () => {
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession?.mcpConfig.api?.headers, {
+    expect(storedSession?.mcpConfig.api?.headers).toEqual({
       Authorization: 'Bearer token123',
       'X-Custom-Header': 'custom-value',
     });
@@ -117,6 +116,6 @@ describe('AmpAcpAgent MCP Integration', () => {
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession?.mcpConfig, {});
+    expect(storedSession?.mcpConfig).toEqual({});
   });
 });

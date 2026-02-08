@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 console.log = console.error;
 console.info = console.error;
 console.warn = console.error;

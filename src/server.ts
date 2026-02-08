@@ -24,6 +24,10 @@ import {
 import { execute, type StreamMessage } from '@sourcegraph/amp-sdk';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { version: PACKAGE_VERSION } = require('../package.json');
 
 interface SessionState {
   threadId: string | null;
@@ -46,8 +50,10 @@ export class AmpAcpAgent implements Agent {
 
   async initialize(request: InitializeRequest): Promise<InitializeResponse> {
     this.clientCapabilities = request.clientCapabilities;
+    console.info(`[acp] amp-acp v${PACKAGE_VERSION} initialized`);
     return {
       protocolVersion: 1,
+      _meta: { version: PACKAGE_VERSION },
       agentCapabilities: {
         promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: true },

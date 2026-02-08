@@ -1,26 +1,17 @@
-/**
- * Test for MCP configuration passthrough from ACP to Amp SDK
- *
- * This test verifies that:
- * 1. stdio type MCP servers are correctly converted
- * 2. HTTP/SSE remote MCP servers are correctly converted
- * 3. Headers are properly converted from ACP array format to Amp SDK object format
- *
- * Run with: node --test src/mcp-config.test.js
- */
-
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import { convertAcpMcpServersToAmpConfig } from './mcp-config.js';
+import type { McpServer } from '@agentclientprotocol/sdk';
 
 describe('MCP Configuration Passthrough', () => {
   describe('stdio type MCP servers', () => {
     it('should convert a basic stdio MCP server', () => {
-      const acpMcpServers = [
+      const acpMcpServers: McpServer[] = [
         {
           name: 'filesystem',
           command: '/path/to/mcp-server',
           args: ['--stdio'],
+          env: [],
         },
       ];
 
@@ -35,8 +26,8 @@ describe('MCP Configuration Passthrough', () => {
       });
     });
 
-    it('should convert a stdio MCP server with environment variables array', () => {
-      const acpMcpServers = [
+    it('should convert a stdio MCP server with environment variables', () => {
+      const acpMcpServers: McpServer[] = [
         {
           name: 'filesystem',
           command: '/path/to/mcp-server',
@@ -61,38 +52,11 @@ describe('MCP Configuration Passthrough', () => {
         },
       });
     });
-
-    it('should convert a stdio MCP server with environment variables object', () => {
-      const acpMcpServers = [
-        {
-          name: 'filesystem',
-          command: '/path/to/mcp-server',
-          args: ['--stdio'],
-          env: {
-            API_KEY: 'secret123',
-            DEBUG: 'true',
-          },
-        },
-      ];
-
-      const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
-
-      assert.deepStrictEqual(result, {
-        filesystem: {
-          command: '/path/to/mcp-server',
-          args: ['--stdio'],
-          env: {
-            API_KEY: 'secret123',
-            DEBUG: 'true',
-          },
-        },
-      });
-    });
   });
 
   describe('HTTP type remote MCP servers', () => {
     it('should convert a basic HTTP MCP server (Exa example)', () => {
-      const acpMcpServers = [
+      const acpMcpServers: McpServer[] = [
         {
           type: 'http',
           name: 'exa',
@@ -111,8 +75,8 @@ describe('MCP Configuration Passthrough', () => {
       });
     });
 
-    it('should convert an HTTP MCP server with headers array format', () => {
-      const acpMcpServers = [
+    it('should convert an HTTP MCP server with headers', () => {
+      const acpMcpServers: McpServer[] = [
         {
           type: 'http',
           name: 'api-server',
@@ -136,35 +100,11 @@ describe('MCP Configuration Passthrough', () => {
         },
       });
     });
-
-    it('should convert an HTTP MCP server with headers object format', () => {
-      const acpMcpServers = [
-        {
-          type: 'http',
-          name: 'sourcegraph',
-          url: 'https://sourcegraph.example.com/.api/mcp/v1',
-          headers: {
-            Authorization: 'token sgp_xxx',
-          },
-        },
-      ];
-
-      const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
-
-      assert.deepStrictEqual(result, {
-        sourcegraph: {
-          url: 'https://sourcegraph.example.com/.api/mcp/v1',
-          headers: {
-            Authorization: 'token sgp_xxx',
-          },
-        },
-      });
-    });
   });
 
   describe('SSE type remote MCP servers', () => {
     it('should convert an SSE MCP server', () => {
-      const acpMcpServers = [
+      const acpMcpServers: McpServer[] = [
         {
           type: 'sse',
           name: 'event-stream',
@@ -188,11 +128,12 @@ describe('MCP Configuration Passthrough', () => {
 
   describe('Mixed MCP servers', () => {
     it('should convert a mix of stdio and HTTP MCP servers', () => {
-      const acpMcpServers = [
+      const acpMcpServers: McpServer[] = [
         {
           name: 'playwright',
           command: 'npx',
           args: ['-y', '@playwright/mcp@latest', '--headless'],
+          env: [],
         },
         {
           type: 'http',

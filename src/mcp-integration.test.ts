@@ -1,29 +1,24 @@
-/**
- * Integration test for MCP server passthrough via AmpAcpAgent
- *
- * This test validates that MCP configurations are correctly stored
- * in sessions when passed through the AmpAcpAgent class.
- *
- * Run with: node --test src/mcp-integration.test.js
- */
-
 import assert from 'node:assert';
 import { describe, it, beforeEach } from 'node:test';
 import { AmpAcpAgent } from './server.js';
+import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
-// Mock client for testing
 const mockClient = {
   sessionUpdate: async () => {},
-  readTextFile: async () => {},
-  writeTextFile: async () => {},
-};
+  readTextFile: async () => ({ text: '' }),
+  writeTextFile: async () => ({}),
+  requestPermission: async () => ({ optionId: '' }),
+  createTerminal: async () => ({ id: '' }),
+  extMethod: async () => ({}),
+  extNotification: async () => {},
+} as unknown as AgentSideConnection;
 
 describe('AmpAcpAgent MCP Integration', () => {
-  let agent;
+  let agent: AmpAcpAgent;
 
   beforeEach(async () => {
     agent = new AmpAcpAgent(mockClient);
-    await agent.initialize({ clientCapabilities: {} });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 
   it('should pass through HTTP MCP server (Exa example)', async () => {
@@ -41,7 +36,7 @@ describe('AmpAcpAgent MCP Integration', () => {
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession.mcpConfig, {
+    assert.deepStrictEqual(storedSession?.mcpConfig, {
       exa: {
         url: 'https://mcp.exa.ai/mcp',
         headers: undefined,
@@ -57,6 +52,7 @@ describe('AmpAcpAgent MCP Integration', () => {
           name: 'playwright',
           command: 'npx',
           args: ['-y', '@playwright/mcp@latest', '--headless'],
+          env: [],
         },
         {
           type: 'http',
@@ -80,16 +76,12 @@ describe('AmpAcpAgent MCP Integration', () => {
     });
 
     const storedSession = agent.sessions.get(session.sessionId);
-    const { mcpConfig } = storedSession;
+    const mcpConfig = storedSession!.mcpConfig;
 
-    // Verify all servers are present with correct structure
     assert.strictEqual(mcpConfig.playwright?.command, 'npx');
     assert.deepStrictEqual(mcpConfig.playwright?.args, ['-y', '@playwright/mcp@latest', '--headless']);
-
     assert.strictEqual(mcpConfig.exa?.url, 'https://mcp.exa.ai/mcp?tools=web_search_exa');
-
     assert.strictEqual(mcpConfig.sourcegraph?.url, 'https://sourcegraph.example.com/.api/mcp/v1');
-
     assert.strictEqual(mcpConfig.monday?.url, 'https://mcp.monday.com/sse');
   });
 
@@ -111,7 +103,7 @@ describe('AmpAcpAgent MCP Integration', () => {
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession.mcpConfig.api.headers, {
+    assert.deepStrictEqual(storedSession?.mcpConfig.api?.headers, {
       Authorization: 'Bearer token123',
       'X-Custom-Header': 'custom-value',
     });
@@ -120,10 +112,11 @@ describe('AmpAcpAgent MCP Integration', () => {
   it('should handle session without MCP servers', async () => {
     const session = await agent.newSession({
       cwd: '/tmp',
+      mcpServers: [],
     });
 
     const storedSession = agent.sessions.get(session.sessionId);
 
-    assert.deepStrictEqual(storedSession.mcpConfig, {});
+    assert.deepStrictEqual(storedSession?.mcpConfig, {});
   });
 });

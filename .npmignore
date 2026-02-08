@@ -4,6 +4,10 @@
 # Development files
 .gitignore
 .npmignore
+src/
+tsconfig.json
+tsconfig.test.json
+dist-test/
 
 # Documentation (optional, remove if you want to include docs)
 # AGENTS.md

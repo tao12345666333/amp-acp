@@ -57,7 +57,18 @@ export class AmpAcpAgent implements Agent {
         promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: true },
       },
-      authMethods: [],
+      authMethods: [
+        {
+          id: 'setup',
+          name: 'Amp API Key Setup',
+          description: 'Run interactive setup to configure your Amp API key',
+          _meta: {
+            'terminal-auth': {
+              args: ['--setup'],
+            },
+          },
+        },
+      ],
     };
   }
 
@@ -110,6 +121,9 @@ export class AmpAcpAgent implements Agent {
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse> {
+    if (process.env.AMP_API_KEY) {
+      return {};
+    }
     throw RequestError.authRequired();
   }
 

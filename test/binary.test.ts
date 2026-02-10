@@ -102,7 +102,10 @@ describe('Binary integration tests', () => {
     expect(caps.promptCapabilities.embeddedContext).toBe(true);
     expect(caps.mcpCapabilities.http).toBe(true);
     expect(caps.mcpCapabilities.sse).toBe(true);
-    expect(resp.result!.authMethods).toEqual([]);
+    const authMethods = resp.result!.authMethods as Array<{ id: string; name: string }>;
+    expect(authMethods).toHaveLength(1);
+    expect(authMethods[0].id).toBe('setup');
+    expect(authMethods[0].name).toBe('Amp API Key Setup');
   });
 
   it('session/new returns sessionId and modes', async () => {

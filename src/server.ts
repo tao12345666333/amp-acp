@@ -153,6 +153,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
     const options: Record<string, unknown> = {
       cwd: s.cwd,
+      env: { TERM: 'dumb' },
     };
 
     if (s.mode === 'bypass') {

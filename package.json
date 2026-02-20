@@ -1,6 +1,6 @@
 {
   "name": "amp-acp",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
@@ -17,18 +17,18 @@
     "url": "https://github.com/tao12345666333/amp-acp"
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun scripts/patch-find-amp.ts",
-    "build:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun scripts/patch-find-amp.ts && bun build dist/index.js --compile --outfile dist/amp-acp",
+    "build": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js",
+    "build:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp",
     "start": "bun dist/index.js",
     "lint": "tsc --noEmit",
     "test": "bun test src/",
-    "test:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun scripts/patch-find-amp.ts && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/binary.test.ts",
+    "test:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/binary.test.ts",
     "test:all": "bun run test && bun run test:binary"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.4.8",
     "@sourcegraph/amp": "^0.0.1765685598-g5365e6",
-    "@sourcegraph/amp-sdk": "^0.1.0-20251214200908-g3251f72"
+    "@sourcegraph/amp-sdk": "0.1.0-20260220044036-g88868e6"
   },
   "devDependencies": {
     "@types/bun": "^1.2.5",

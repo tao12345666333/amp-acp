@@ -48,6 +48,7 @@ async function setup(): Promise<void> {
     process.exit(0);
   }
 
+  console.error('You can get your API key from: https://ampcode.com/settings');
   const apiKey = await prompt('Paste your AMP API key: ');
   if (!apiKey) {
     console.error('No API key provided. Aborting.');

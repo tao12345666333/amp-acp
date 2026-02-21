@@ -83,8 +83,33 @@ jobs:
           path: binaries
           merge-multiple: true
 
+      - name: Package archives
+        run: |
+          mkdir -p archives
+          declare -A PLATFORM_MAP=(
+            ["amp-acp-darwin-arm64"]="darwin-aarch64"
+            ["amp-acp-darwin-x64"]="darwin-x86_64"
+            ["amp-acp-linux-arm64"]="linux-aarch64"
+            ["amp-acp-linux-x64"]="linux-x86_64"
+          )
+          for binary in "${!PLATFORM_MAP[@]}"; do
+            platform="${PLATFORM_MAP[$binary]}"
+            tmpdir=$(mktemp -d)
+            cp "binaries/${binary}" "${tmpdir}/amp-acp"
+            chmod +x "${tmpdir}/amp-acp"
+            tar -czf "archives/amp-acp-${platform}.tar.gz" -C "${tmpdir}" amp-acp
+            rm -rf "${tmpdir}"
+          done
+          # Windows
+          tmpdir=$(mktemp -d)
+          cp "binaries/amp-acp-windows-x64.exe" "${tmpdir}/amp-acp.exe"
+          (cd "${tmpdir}" && zip -q "${OLDPWD}/archives/amp-acp-windows-x86_64.zip" amp-acp.exe)
+          rm -rf "${tmpdir}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: binaries/*
+          files: |
+            binaries/amp-acp-*
+            archives/*

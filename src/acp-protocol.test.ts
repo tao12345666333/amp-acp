@@ -42,12 +42,16 @@ describe('ACP Protocol End-to-End', () => {
     });
 
     expect(response.protocolVersion).toBe(1);
-    expect(response._meta?.version).toBeDefined();
+    expect(response.agentInfo?.name).toBe('amp-acp');
+    expect(response.agentInfo?.version).toBeDefined();
     expect(response.agentCapabilities?.promptCapabilities?.image).toBe(true);
     expect(response.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true);
     expect(response.agentCapabilities?.mcpCapabilities?.http).toBe(true);
     expect(response.agentCapabilities?.mcpCapabilities?.sse).toBe(true);
-    expect(response.authMethods).toEqual([]);
+    expect(response.authMethods).toHaveLength(1);
+    expect(response.authMethods![0].id).toBe('setup');
+    expect(response.authMethods![0].name).toBe('Amp API Key Setup');
+    expect(response.authMethods![0]._meta?.['terminal-auth']?.label).toBe('Amp API Key Setup');
   });
 
   it('should handle newSession and return a valid sessionId', async () => {
@@ -119,12 +123,16 @@ describe('ACP Protocol End-to-End', () => {
     expect(r2).toEqual({});
   });
 
-  it('should reject authenticate with authRequired', async () => {
+  it('should reject authenticate when AMP_API_KEY is not set', async () => {
+    const saved = process.env.AMP_API_KEY;
+    delete process.env.AMP_API_KEY;
     try {
-      await agentConnection.authenticate({ methodId: 'oauth' });
+      await agentConnection.authenticate({ methodId: 'setup' });
       expect(true).toBe(false);
     } catch (e: unknown) {
       expect(e).toBeDefined();
+    } finally {
+      if (saved) process.env.AMP_API_KEY = saved;
     }
   });
 

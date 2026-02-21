@@ -24,6 +24,7 @@ import {
 import { execute, type StreamMessage } from '@sourcegraph/amp-sdk';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
+import path from 'node:path';
 import packageJson from '../package.json';
 
 const PACKAGE_VERSION: string = packageJson.version;
@@ -38,6 +39,14 @@ interface SessionState {
   cwd: string;
 }
 
+interface InitializeResponseWithAgentInfo extends InitializeResponse {
+  agentInfo: {
+    name: string;
+    title: string;
+    version: string;
+  };
+}
+
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
   sessions = new Map<string, SessionState>();
@@ -47,12 +56,16 @@ export class AmpAcpAgent implements Agent {
     this.client = client;
   }
 
-  async initialize(request: InitializeRequest): Promise<InitializeResponse> {
+  async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
     this.clientCapabilities = request.clientCapabilities;
     console.info(`[acp] amp-acp v${PACKAGE_VERSION} initialized`);
     return {
       protocolVersion: 1,
-      _meta: { version: PACKAGE_VERSION },
+      agentInfo: {
+        name: 'amp-acp',
+        title: 'Amp ACP Agent',
+        version: PACKAGE_VERSION,
+      },
       agentCapabilities: {
         promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: true },
@@ -64,7 +77,9 @@ export class AmpAcpAgent implements Agent {
           description: 'Run interactive setup to configure your Amp API key',
           _meta: {
             'terminal-auth': {
+              command: getTerminalAuthCommand(),
               args: ['--setup'],
+              label: 'Amp API Key Setup',
             },
           },
         },
@@ -202,6 +217,10 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
 
         if (message.type === 'result' && message.is_error) {
+          if (typeof message.error === 'string' && isAuthError(message.error)) {
+            console.error('[amp] Auth error in result, requesting authentication:', message.error);
+            throw RequestError.authRequired();
+          }
           await this.client.sessionUpdate({
             sessionId: params.sessionId,
             update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Error: ${message.error}` } },
@@ -213,6 +232,10 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     } catch (err) {
       if (s.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };
+      }
+      if (err instanceof Error && isAuthError(err.message)) {
+        console.error('[amp] Auth error, requesting authentication:', err.message);
+        throw RequestError.authRequired();
       }
       console.error('[amp] Execution error:', err);
       throw err;
@@ -243,4 +266,26 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> { return this.client.readTextFile(params); }
   async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> { return this.client.writeTextFile(params); }
+}
+
+export function isAuthError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('invalid or missing api key') ||
+    lower.includes("run 'amp login'") ||
+    lower.includes('authentication') ||
+    lower.includes('unauthorized') ||
+    lower.includes('no api key found') ||
+    (lower.includes('api key') && lower.includes('login flow')) ||
+    (lower.includes('api key') && (lower.includes('missing') || lower.includes('invalid')));
+}
+
+export function getTerminalAuthCommand(
+  argv1: string | undefined = process.argv[1],
+  execPath: string = process.execPath,
+): string {
+  const resolvedArgv1 = argv1 ? path.resolve(argv1) : '';
+  if (!resolvedArgv1 || resolvedArgv1.startsWith('/$bunfs/')) {
+    return execPath;
+  }
+  return resolvedArgv1;
 }

@@ -95,17 +95,29 @@ describe('Binary integration tests', () => {
 
     expect(resp.result).toBeDefined();
     expect(resp.result!.protocolVersion).toBe(1);
-    expect(resp.result!._meta).toBeDefined();
-    expect((resp.result!._meta as Record<string, unknown>).version).toBeDefined();
+    const agentInfo = resp.result!.agentInfo as Record<string, unknown>;
+    expect(agentInfo).toBeDefined();
+    expect(agentInfo.name).toBe('amp-acp');
+    expect(agentInfo.version).toBeDefined();
     const caps = resp.result!.agentCapabilities as Record<string, Record<string, boolean>>;
     expect(caps.promptCapabilities.image).toBe(true);
     expect(caps.promptCapabilities.embeddedContext).toBe(true);
     expect(caps.mcpCapabilities.http).toBe(true);
     expect(caps.mcpCapabilities.sse).toBe(true);
-    const authMethods = resp.result!.authMethods as Array<{ id: string; name: string }>;
+    const authMethods = resp.result!.authMethods as Array<{
+      id: string;
+      name: string;
+      _meta?: { 'terminal-auth'?: { command?: string; args?: string[]; label?: string } };
+    }>;
     expect(authMethods).toHaveLength(1);
     expect(authMethods[0].id).toBe('setup');
     expect(authMethods[0].name).toBe('Amp API Key Setup');
+    const command = authMethods[0]._meta?.['terminal-auth']?.command;
+    const label = authMethods[0]._meta?.['terminal-auth']?.label;
+    expect(command).toBeDefined();
+    expect(path.isAbsolute(command!)).toBe(true);
+    expect(command!.startsWith('/$bunfs/')).toBe(false);
+    expect(label).toBe('Amp API Key Setup');
   });
 
   it('session/new returns sessionId and modes', async () => {
@@ -169,6 +181,7 @@ describe('Binary integration tests', () => {
 
     expect(resp.error).toBeDefined();
     expect(resp.error!.code).toBe(-32000);
+    expect(resp.error!.message).toBe('Authentication required');
   });
 
   it('multiple sessions are independent', async () => {

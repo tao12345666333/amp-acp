@@ -65,7 +65,7 @@ async function setup(): Promise<void> {
 }
 
 if (process.argv.includes('--setup')) {
-  setup();
+  await setup();
 } else {
   if (!process.env.AMP_API_KEY) {
     const stored = loadStoredApiKey();

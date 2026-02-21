@@ -1,6 +1,6 @@
 id = "amp-acp"
 name = "Amp"
-version = "0.6.0"
+version = "0.6.2"
 schema_version = 1
 authors = ["tao12345666333"]
 description = "Amp Agent for Zed"
@@ -10,25 +10,23 @@ repository = "https://github.com/tao12345666333/amp-acp"
 name = "Amp"
 icon = "icon/amp.svg"
 
-[agent_servers.amp.env]
-AMP_API_KEY = ""
 
 [agent_servers.amp.targets.darwin-aarch64]
-archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.0/amp-acp-darwin-aarch64.tar.gz"
+archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.2/amp-acp-darwin-aarch64.tar.gz"
 cmd = "amp-acp"
 
 [agent_servers.amp.targets.darwin-x86_64]
-archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.0/amp-acp-darwin-x86_64.tar.gz"
+archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.2/amp-acp-darwin-x86_64.tar.gz"
 cmd = "amp-acp"
 
 [agent_servers.amp.targets.linux-aarch64]
-archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.0/amp-acp-linux-aarch64.tar.gz"
+archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.2/amp-acp-linux-aarch64.tar.gz"
 cmd = "amp-acp"
 
 [agent_servers.amp.targets.linux-x86_64]
-archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.0/amp-acp-linux-x86_64.tar.gz"
+archive = "http://localhost:8888/amp-acp-linux-x86_64.tar.gz"
 cmd = "amp-acp"
 
 [agent_servers.amp.targets.windows-x86_64]
-archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.0/amp-acp-windows-x86_64.zip"
+archive = "https://github.com/tao12345666333/amp-acp/releases/download/v0.6.2/amp-acp-windows-x86_64.zip"
 cmd = "amp-acp.exe"

@@ -42,7 +42,8 @@ describe('ACP Protocol End-to-End', () => {
     });
 
     expect(response.protocolVersion).toBe(1);
-    expect(response._meta?.version).toBeDefined();
+    expect(response.agentInfo?.name).toBe('amp-acp');
+    expect(response.agentInfo?.version).toBeDefined();
     expect(response.agentCapabilities?.promptCapabilities?.image).toBe(true);
     expect(response.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true);
     expect(response.agentCapabilities?.mcpCapabilities?.http).toBe(true);
@@ -50,6 +51,7 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.authMethods).toHaveLength(1);
     expect(response.authMethods![0].id).toBe('setup');
     expect(response.authMethods![0].name).toBe('Amp API Key Setup');
+    expect(response.authMethods![0]._meta?.['terminal-auth']?.label).toBe('Amp API Key Setup');
   });
 
   it('should handle newSession and return a valid sessionId', async () => {

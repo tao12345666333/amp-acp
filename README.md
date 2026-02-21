@@ -69,6 +69,8 @@ Zed will automatically load the extension and download the correct binary for yo
 
 **If you don't have Amp CLI**: Run `amp-acp --setup` to configure your API key interactively. Alternatively, you can start a chat in Zed's Agent Panel — it will automatically trigger the setup flow if no credentials are found, just follow the prompts.
 
+![Auth Process](img/auth-process.png)
+
 ## Features
 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP

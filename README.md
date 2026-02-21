@@ -1,33 +1,39 @@
-# ACP adapter for AmpCode
+# ACP adapter for Amp
+
+[![CI](https://github.com/tao12345666333/amp-acp/actions/workflows/ci.yml/badge.svg)](https://github.com/tao12345666333/amp-acp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/amp-acp)](https://www.npmjs.com/package/amp-acp)
 
 ![Screenshot](img/screenshot.png)
 
 Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-compatible clients such as [Zed](https://zed.dev) or [Toad](https://github.com/batrachianai/toad).
 
-## Prerequisites
-
-- Node.js 18+ (the adapter will be installed automatically via `npx`)
-
 ## Installation
 
-Add to your Zed `settings.json` (open with `cmd+,` or `ctrl+,`):
+### Option 1: Pre-built Binary (Recommended)
+
+Download a standalone binary from the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page — no runtime dependencies required.
+
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| Linux | x64 | `amp-acp-linux-x64` |
+| Linux | arm64 | `amp-acp-linux-arm64` |
+| macOS | x64 (Intel) | `amp-acp-darwin-x64` |
+| macOS | arm64 (Apple Silicon) | `amp-acp-darwin-arm64` |
+| Windows | x64 | `amp-acp-windows-x64.exe` |
+
+Download the binary for your platform, make it executable (`chmod +x` on Linux/macOS), and add to your Zed `settings.json` (open with `cmd+,` or `ctrl+,`):
 
 ```json
 {
   "agent_servers": {
     "Amp": {
-      "command": "npx",
-      "args": ["-y", "amp-acp"]
+      "command": "/path/to/amp-acp-darwin-arm64"
     }
   }
 }
 ```
 
-That's it! The SDK handles authentication and Amp integration automatically.
-
-## First Use
-
-**If you don't have Amp CLI installed**: Add the `AMP_API_KEY` environment variable to your Zed config. You can get your API key from https://ampcode.com/settings
+### Option 2: npx
 
 ```json
 {
@@ -43,34 +49,48 @@ That's it! The SDK handles authentication and Amp integration automatically.
 }
 ```
 
-**If you [have Amp CLI installed](https://ampcode.com/manual#getting-started-command-line-interface)**: Run `amp login` first to authenticate.
+Requires Node.js 18+.
 
-## How it Works
+### Option 3: Zed ACP Registry (Coming Soon)
 
-- Uses the official Amp SDK to communicate with AmpCode
-- Streams Amp's responses over the Agent Client Protocol (ACP)
-- Renders Amp messages and interactions natively in Zed
-- Tool permissions are handled by Amp (no additional configuration needed)
-- Supports conversation continuity across multiple prompts
-- **MCP servers configured in Zed are automatically passed through to Amp**
+A [PR to the ACP Registry](https://github.com/agentclientprotocol/registry/pull/89) is in progress. Once merged, you'll be able to install Amp directly from Zed's ACP Registry.
+
+In the meantime, you can install it as a **Dev Extension**:
+
+1. Clone this repository: `git clone https://github.com/tao12345666333/amp-acp.git`
+2. In Zed, open the command palette and run `zed: install dev extension`
+3. Select the cloned `amp-acp` directory
+
+Zed will automatically load the extension and download the correct binary for your platform.
+
+## Authentication
+
+**If you [have Amp CLI installed](https://ampcode.com/manual#getting-started-command-line-interface)**: Run `amp login` first — credentials are shared automatically.
+
+**If you don't have Amp CLI**: Run `amp-acp --setup` to configure your API key interactively. Alternatively, you can start a chat in Zed's Agent Panel — it will automatically trigger the setup flow if no credentials are found, just follow the prompts.
+
+## Features
+
+- **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
+- **Image support** — Handles image content blocks from Amp (base64 and URL)
+- **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
+- **Session modes** — Switch between *Default* (prompts for tool permissions) and *Bypass* (skips permission prompts)
+- **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
+- **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 
 ## MCP Configuration Passthrough
 
-The adapter supports passing [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers configured in Zed through to Amp. This allows you to use the same MCP tools in both Zed's native AI and Amp.
-
-This implementation is compatible with how other ACP agents like [Claude Code](https://github.com/zed-industries/claude-code-acp) and [Codex](https://github.com/zed-industries/codex-acp) handle MCP servers. See [Zed's MCP documentation](https://zed.dev/docs/ai/mcp) for more details.
+MCP servers configured in Zed's `context_servers` are automatically forwarded to Amp. This is compatible with how other ACP agents like [Claude Code](https://github.com/zed-industries/claude-code-acp) and [Codex](https://github.com/zed-industries/codex-acp) handle MCP servers.
 
 ### Supported MCP Server Types
 
 | Type | Description | Example |
 |------|-------------|---------|
 | **stdio** | Local command-line MCP servers | `@playwright/mcp`, `@modelcontextprotocol/server-filesystem` |
-| **HTTP** | Remote HTTP MCP servers | `https://mcp.exa.ai/mcp`, `https://mcp.semgrep.ai/mcp` |
+| **HTTP** | Remote HTTP MCP servers | `https://mcp.exa.ai/mcp` |
 | **SSE** | Remote Server-Sent Events MCP servers | `https://mcp.monday.com/sse` |
 
 ### Example: Using Exa Search with Amp
-
-[Exa](https://exa.ai) provides a powerful web search MCP server. Add both the agent server and context servers to your Zed `settings.json`:
 
 ```json
 {
@@ -89,8 +109,6 @@ This implementation is compatible with how other ACP agents like [Claude Code](h
 ```
 
 ### Example: Multiple MCP Servers
-
-You can configure multiple MCP servers to extend Amp's capabilities:
 
 ```json
 {
@@ -120,43 +138,22 @@ You can configure multiple MCP servers to extend Amp's capabilities:
 }
 ```
 
-### How MCP Passthrough Works
-
-1. When you configure `context_servers` in Zed's `settings.json`, Zed passes them to the ACP agent via the `mcpServers` parameter in the `session/new` request
-2. The amp-acp adapter converts the MCP server configurations from ACP format to Amp SDK format
-3. Amp connects to the MCP servers and makes their tools available during the session
-
 For more details, see [docs/mcp-passthrough.md](docs/mcp-passthrough.md).
 
-## Using Pre-built Binaries
+## Development
 
-Pre-built binaries are available on the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page for:
-
-| Platform | Architecture | Binary |
-|----------|-------------|--------|
-| Linux | x64 | `amp-acp-linux-x64` |
-| Linux | arm64 | `amp-acp-linux-arm64` |
-| macOS | x64 (Intel) | `amp-acp-darwin-x64` |
-| macOS | arm64 (Apple Silicon) | `amp-acp-darwin-arm64` |
-| Windows | x64 | `amp-acp-windows-x64.exe` |
-
-Download the binary for your platform, make it executable (`chmod +x` on Linux/macOS), and configure Zed to use it:
-
-```json
-{
-  "agent_servers": {
-    "Amp": {
-      "command": "/path/to/amp-acp-darwin-arm64"
-    }
-  }
-}
+```bash
+bun install
+bun run build        # Bundle to dist/index.js
+bun run lint         # Type-check with tsc
+bun test src/        # Run unit tests
+bun run test:binary  # Run binary integration tests
+bun run test:all     # Run all tests
 ```
-
-These are standalone executables with no runtime dependencies — no Node.js or Bun required.
 
 ## Troubleshooting
 
-**Adapter doesn't start**: Make sure you have Node.js 18 or later installed. Run `node --version` to check.
+**Adapter doesn't start**: Make sure you have Node.js 18+ (for `npx`) or use a pre-built binary / Zed extension instead.
 
 **Connection issues**: Restart Zed and try again. The adapter creates a fresh connection each time.
 
@@ -164,3 +161,6 @@ These are standalone executables with no runtime dependencies — no Node.js or 
 
 **MCP server not connecting**: Ensure the MCP server command is correct and any required environment variables are set. Check Zed's logs for connection errors.
 
+## License
+
+[Apache-2.0](https://opensource.org/licenses/Apache-2.0)

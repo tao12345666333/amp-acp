@@ -9,7 +9,17 @@ Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-comp
 
 ## Installation
 
-### Option 1: Pre-built Binary (Recommended)
+### Option 1: Zed ACP Registry (Recommended)
+
+Install Amp directly from Zed's ACP Registry:
+
+1. In Zed, open the **Agent Panel**
+2. Click **+**, then select **+ Add More Agents**
+3. Search for **Amp** and install it
+
+Zed will automatically download the correct binary for your platform.
+
+### Option 2: Pre-built Binary
 
 Download a standalone binary from the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page — no runtime dependencies required.
 
@@ -34,7 +44,7 @@ Download the binary for your platform, make it executable (`chmod +x` on Linux/m
 }
 ```
 
-### Option 2: npx
+### Option 3: npx
 
 ```json
 {
@@ -52,18 +62,6 @@ Download the binary for your platform, make it executable (`chmod +x` on Linux/m
 ```
 
 Requires Node.js 18+.
-
-### Option 3: Zed ACP Registry (Coming Soon)
-
-A [PR to the ACP Registry](https://github.com/agentclientprotocol/registry/pull/89) is in progress. Once merged, you'll be able to install Amp directly from Zed's ACP Registry.
-
-In the meantime, you can install it as a **Dev Extension**:
-
-1. Clone this repository: `git clone https://github.com/tao12345666333/amp-acp.git`
-2. In Zed, open the command palette and run `zed: install dev extension`
-3. Select the cloned `amp-acp` directory
-
-Zed will automatically load the extension and download the correct binary for your platform.
 
 ## Authentication
 

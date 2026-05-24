@@ -195,6 +195,9 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
     if (s.threadId) {
       options.continue = s.threadId;
+    } else if (process.env.AMP_ACP_CONTINUE_LATEST) {
+      options.continue = true;
+      console.error('[acp] AMP_ACP_CONTINUE_LATEST set; continuing latest thread on this installation');
     }
 
     const controller = new AbortController();

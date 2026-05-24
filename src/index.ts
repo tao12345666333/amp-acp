@@ -8,7 +8,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import readline from 'node:readline';
+import { createRequire } from 'node:module';
 import { runAcp } from './run-acp.js';
+
+// Workaround for @ampcode/sdk: its findAmpCommand() resolves @ampcode/cli's
+// pkg.bin.amp ("bin/amp.exe") and then spawns it via `node <path>`. But the
+// new @ampcode/cli package replaces that stub with a native executable during
+// postinstall, so `node bin/amp.exe` blows up with ERR_UNKNOWN_FILE_EXTENSION.
+// Resolving the binary here and exposing it via AMP_CLI_PATH makes the SDK's
+// resolveCliFromEnvironment win (and it spawns non-.js paths directly).
+function preferBundledAmpCliBinary(): void {
+  if (process.env.AMP_CLI_PATH) return;
+  try {
+    const req = createRequire(import.meta.url);
+    for (const pkg of ['@ampcode/cli', '@sourcegraph/amp']) {
+      try {
+        const pkgJsonPath = req.resolve(`${pkg}/package.json`);
+        const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8')) as { bin?: { amp?: string } };
+        if (!pkgJson.bin?.amp) continue;
+        const binPath = path.resolve(path.dirname(pkgJsonPath), pkgJson.bin.amp);
+        if (!fs.existsSync(binPath)) continue;
+        if (binPath.endsWith('.js') || binPath.endsWith('.mjs') || binPath.endsWith('.cjs')) continue;
+        process.env.AMP_CLI_PATH = binPath;
+        return;
+      } catch { /* try next */ }
+    }
+  } catch { /* fall through; SDK will try PATH / ~/.local/share/amp */ }
+}
 
 function getConfigDir(): string {
   if (process.platform === 'win32') {
@@ -74,6 +100,8 @@ if (process.argv.includes('--setup')) {
       process.env.AMP_API_KEY = stored;
     }
   }
+
+  preferBundledAmpCliBinary();
 
   runAcp();
 

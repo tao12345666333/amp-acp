@@ -11,7 +11,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 
 - `src/index.ts` — Entry point, redirects console to stderr (stdout reserved for ACP stream)
 - `src/run-acp.ts` — Sets up ACP connection using stdin/stdout JSON streams
-- `src/server.ts` — `AmpAcpAgent` class: handles sessions, prompts, MCP config, and calls `@sourcegraph/amp-sdk`
+- `src/server.ts` — `AmpAcpAgent` class: handles sessions, prompts, MCP config, and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
 - `src/utils.ts` — Node-to-Web stream converters

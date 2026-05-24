@@ -21,7 +21,7 @@ import {
   type WriteTextFileResponse,
   type ClientCapabilities,
 } from '@agentclientprotocol/sdk';
-import { execute, type StreamMessage } from '@sourcegraph/amp-sdk';
+import { execute, type StreamMessage } from '@ampcode/sdk';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 import path from 'node:path';
@@ -107,8 +107,17 @@ export class AmpAcpAgent implements Agent {
       modes: {
         currentModeId: 'default',
         availableModes: [
-          { id: 'default', name: 'Default', description: 'Prompts for permission on first use of each tool' },
-          { id: 'bypass', name: 'Bypass', description: 'Skips all permission prompts' },
+          {
+            id: 'default',
+            name: 'Default',
+            description:
+              "Use Amp's configured behavior. As of Amp Neo, tools run without prompts unless you've opted into permissions (e.g. amp.permissions, amp.dangerouslyAllowAll: false, or amp.guardedFiles.allowlist).",
+          },
+          {
+            id: 'bypass',
+            name: 'Bypass',
+            description: 'Force-allow every tool call, overriding any configured permissions plugin (dangerouslyAllowAll).',
+          },
         ],
       },
     };

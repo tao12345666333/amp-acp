@@ -3,7 +3,7 @@ import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
 
-mock.module('@sourcegraph/amp-sdk', () => ({
+mock.module('@ampcode/sdk', () => ({
   execute: ({ options }: { options: Record<string, unknown> }) => {
     capturedCalls.push({ options });
     return (async function* () {

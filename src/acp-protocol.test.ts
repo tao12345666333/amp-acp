@@ -214,9 +214,52 @@ describe('toAcpNotifications', () => {
     expect(result[0].update).toMatchObject({
       sessionUpdate: 'tool_call',
       toolCallId: 'tool-1',
-      title: 'Read',
+      title: 'Read: /tmp/file.txt',
       status: 'pending',
-      kind: 'other',
+      kind: 'read',
+      locations: [{ path: '/tmp/file.txt' }],
+    });
+  });
+
+  it('should render Bash tool calls with the command', () => {
+    const result = toAcpNotifications(
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'tool-2', name: 'Bash', input: { cmd: 'rg "tool_call" src' } }],
+        },
+      },
+      'session-1',
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].update).toMatchObject({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tool-2',
+      title: 'Bash: rg "tool_call" src',
+      status: 'pending',
+      kind: 'execute',
+    });
+  });
+
+  it('should render nested Bash commands in tool title', () => {
+    const result = toAcpNotifications(
+      {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'tool-2b', name: 'Bash', input: { input: { command: 'uptime' } } }],
+        },
+      },
+      'session-1',
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].update).toMatchObject({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tool-2b',
+      title: 'Bash: uptime',
+      status: 'pending',
+      kind: 'execute',
     });
   });
 
@@ -294,7 +337,7 @@ describe('toAcpNotifications', () => {
     expect(result).toHaveLength(3);
     expect(result[0].update).toMatchObject({ sessionUpdate: 'agent_thought_chunk' });
     expect(result[1].update).toMatchObject({ sessionUpdate: 'agent_message_chunk' });
-    expect(result[2].update).toMatchObject({ sessionUpdate: 'tool_call', title: 'Bash' });
+    expect(result[2].update).toMatchObject({ sessionUpdate: 'tool_call', title: 'Bash: ls' });
   });
 
   it('should return empty for missing message', () => {

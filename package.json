@@ -1,6 +1,6 @@
 {
   "name": "amp-acp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
@@ -27,8 +27,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.4.8",
-    "@ampcode/cli": "^0.0.1779624958-g6d0650",
-    "@ampcode/sdk": "0.1.0-20260524123501-g6d0650a"
+    "@ampcode/cli": "^0.0.1779896748-g596c49",
+    "@ampcode/sdk": "0.1.0-20260528044221-ge0e19fa"
   },
   "devDependencies": {
     "@types/bun": "^1.2.5",

@@ -29,12 +29,37 @@ import packageJson from '../package.json';
 
 const PACKAGE_VERSION: string = packageJson.version;
 
+const AMP_MODELS = [
+  {
+    modelId: 'smart',
+    name: 'Smart',
+    description: 'Amp smart mode: maximum capability and autonomy for general coding tasks.',
+  },
+  {
+    modelId: 'deep',
+    name: 'Deep',
+    description: 'Amp deep mode: extended reasoning for complex tasks.',
+  },
+  {
+    modelId: 'rush',
+    name: 'Rush',
+    description: 'Amp rush mode: fast responses for small, well-defined tasks.',
+  },
+] as const;
+
+type AmpModelId = typeof AMP_MODELS[number]['modelId'];
+
+function isAmpModelId(modelId: string): modelId is AmpModelId {
+  return AMP_MODELS.some((model) => model.modelId === modelId);
+}
+
 interface SessionState {
   threadId: string | null;
   controller: AbortController | null;
   cancelled: boolean;
   active: boolean;
   mode: string;
+  model: AmpModelId;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -98,12 +123,17 @@ export class AmpAcpAgent implements Agent {
       cancelled: false,
       active: false,
       mode: 'default',
+      model: 'smart',
       mcpConfig,
       cwd: params.cwd || process.cwd(),
     });
 
     const result: NewSessionResponse = {
       sessionId,
+      models: {
+        currentModelId: 'smart',
+        availableModels: [...AMP_MODELS],
+      },
       modes: {
         currentModeId: 'default',
         availableModes: [
@@ -192,6 +222,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     const options: Record<string, unknown> = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
+      mode: s.model,
     };
 
     if (s.mode === 'bypass') {
@@ -267,7 +298,15 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
   }
 
-  async setSessionModel(_params: SetSessionModelRequest): Promise<SetSessionModelResponse> { return {}; }
+  async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {
+    const s = this.sessions.get(params.sessionId);
+    if (!s) throw new Error('Session not found');
+    if (!isAmpModelId(params.modelId)) {
+      throw new Error(`Unsupported model: ${params.modelId}`);
+    }
+    s.model = params.modelId;
+    return {};
+  }
 
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
     const s = this.sessions.get(params.sessionId);

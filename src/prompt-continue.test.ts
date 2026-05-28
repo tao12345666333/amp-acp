@@ -53,6 +53,19 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.continue).toBeUndefined();
+    expect(capturedCalls[0]!.options.mode).toBe('smart');
+  });
+
+  it('passes selected Amp model as SDK mode', async () => {
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionModel({ sessionId: session.sessionId, modelId: 'deep' });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0]!.options.mode).toBe('deep');
   });
 
   it('sets continue=true on first prompt when AMP_ACP_CONTINUE_LATEST is set', async () => {

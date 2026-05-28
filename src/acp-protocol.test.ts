@@ -62,6 +62,9 @@ describe('ACP Protocol End-to-End', () => {
 
     expect(response.sessionId).toBeDefined();
     expect(response.sessionId).toMatch(/^S-/);
+    expect(response.models?.currentModelId).toBe('smart');
+    expect(response.models?.availableModels).toHaveLength(3);
+    expect(response.models?.availableModels?.map((m) => m.modelId)).toEqual(['smart', 'deep', 'rush']);
     expect(response.modes?.currentModeId).toBe('default');
     expect(response.modes?.availableModes).toHaveLength(2);
     expect(response.modes?.availableModes?.map((m) => m.id)).toEqual(['default', 'bypass']);

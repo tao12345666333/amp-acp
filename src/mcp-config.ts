@@ -17,25 +17,30 @@ export function convertAcpMcpServersToAmpConfig(mcpServers: McpServer[] | undefi
   }
 
   for (const server of mcpServers) {
-    if ('type' in server && (server.type === 'http' || server.type === 'sse')) {
+    if ('type' in server) {
+      if (server.type === 'acp') {
+        continue;
+      }
+
       const headers: Record<string, string> = {};
-      for (const h of server.headers) {
-        headers[h.name] = h.value;
+      for (const header of server.headers) {
+        headers[header.name] = header.value;
       }
       mcpConfig[server.name] = {
         url: server.url,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
       };
-    } else {
-      const env = server.env.length > 0
-        ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))
-        : undefined;
-      mcpConfig[server.name] = {
-        command: server.command,
-        args: server.args,
-        env,
-      };
+      continue;
     }
+
+    const env = server.env.length > 0
+      ? Object.fromEntries(server.env.map((entry) => [entry.name, entry.value]))
+      : undefined;
+    mcpConfig[server.name] = {
+      command: server.command,
+      args: server.args,
+      env,
+    };
   }
 
   return mcpConfig;

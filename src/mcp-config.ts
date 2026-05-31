@@ -26,6 +26,11 @@ export function convertAcpMcpServersToAmpConfig(mcpServers: McpServer[] | undefi
         url: server.url,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
       };
+    } else if ('type' in server && server.type === 'acp') {
+      // ACP-transport MCP servers route over the ACP connection. Amp's SDK MCP
+      // config only accepts direct stdio/http/sse server definitions, and this
+      // agent does not advertise ACP-transport MCP support.
+      continue;
     } else {
       const env = server.env.length > 0
         ? Object.fromEntries(server.env.map((e) => [e.name, e.value]))

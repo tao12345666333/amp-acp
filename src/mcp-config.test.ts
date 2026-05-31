@@ -125,6 +125,22 @@ describe('MCP Configuration Passthrough', () => {
     });
   });
 
+  describe('ACP type MCP servers', () => {
+    it('should ignore ACP-transport MCP servers because Amp SDK config cannot represent them', () => {
+      const acpMcpServers: McpServer[] = [
+        {
+          type: 'acp',
+          id: 'zed-provided-mcp',
+          name: 'zed-provided-mcp',
+        },
+      ];
+
+      const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
+
+      expect(result).toEqual({});
+    });
+  });
+
   describe('Mixed MCP servers', () => {
     it('should convert a mix of stdio and HTTP MCP servers', () => {
       const acpMcpServers: McpServer[] = [

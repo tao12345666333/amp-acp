@@ -427,7 +427,20 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
 
-    return { configOptions: buildSessionConfigOptions(s) };
+    const configOptions = buildSessionConfigOptions(s);
+    try {
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions,
+        },
+      });
+    } catch (e) {
+      console.error('[acp] failed to send config_option_update', e);
+    }
+
+    return { configOptions };
   }
 
   async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {

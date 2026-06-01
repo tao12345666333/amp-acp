@@ -35,7 +35,8 @@ const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
 const CONFIG_EFFORT = 'effort';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
-const AMP_EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const AMP_SMART_EFFORT_LEVELS = ['high', 'xhigh', 'max'] as const;
+const AMP_DEEP_EFFORT_LEVELS = ['low', 'medium', 'xhigh'] as const;
 
 const AMP_MODELS = [
   {
@@ -56,8 +57,16 @@ const AMP_MODELS = [
 ] as const;
 
 type AmpModelId = typeof AMP_MODELS[number]['modelId'];
+type AmpEffortMode = Extract<AmpModelId, 'smart' | 'deep'>;
 type PermissionMode = typeof PERMISSION_MODES[number];
-type AmpEffort = typeof AMP_EFFORT_LEVELS[number];
+type AmpSmartEffort = typeof AMP_SMART_EFFORT_LEVELS[number];
+type AmpDeepEffort = typeof AMP_DEEP_EFFORT_LEVELS[number];
+type AmpEffort = AmpSmartEffort | AmpDeepEffort;
+
+interface SessionEfforts {
+  smart: AmpSmartEffort;
+  deep: AmpDeepEffort;
+}
 
 function isAmpModelId(modelId: string): modelId is AmpModelId {
   return AMP_MODELS.some((model) => model.modelId === modelId);
@@ -67,15 +76,28 @@ function isPermissionMode(mode: string): mode is PermissionMode {
   return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
 }
 
-function isAmpEffort(effort: string): effort is AmpEffort {
-  return AMP_EFFORT_LEVELS.some((level) => level === effort);
-}
-
-function supportsReasoningEffort(model: AmpModelId): boolean {
+function supportsReasoningEffort(model: AmpModelId): model is AmpEffortMode {
   return model === 'smart' || model === 'deep';
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'effort'>): SessionConfigOption[] {
+function effortLevelsForModel(model: AmpEffortMode): readonly AmpEffort[] {
+  return model === 'smart' ? AMP_SMART_EFFORT_LEVELS : AMP_DEEP_EFFORT_LEVELS;
+}
+
+function isSmartEffort(effort: string): effort is AmpSmartEffort {
+  return AMP_SMART_EFFORT_LEVELS.some((level) => level === effort);
+}
+
+function isDeepEffort(effort: string): effort is AmpDeepEffort {
+  return AMP_DEEP_EFFORT_LEVELS.some((level) => level === effort);
+}
+
+function currentEffort(s: Pick<SessionState, 'model' | 'efforts'>): AmpEffort | undefined {
+  if (!supportsReasoningEffort(s.model)) return undefined;
+  return s.efforts[s.model];
+}
+
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'efforts'>): SessionConfigOption[] {
   const options: SessionConfigOption[] = [
     {
       type: 'select',
@@ -114,14 +136,15 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'eff
   ];
 
   if (supportsReasoningEffort(s.model)) {
+    const effortLevels = effortLevelsForModel(s.model);
     options.push({
       type: 'select',
       id: CONFIG_EFFORT,
       name: 'Effort',
-      description: 'Set model reasoning effort for Amp smart and deep modes.',
+      description: `Set model reasoning effort for Amp ${s.model} mode.`,
       category: 'thought_level',
-      currentValue: s.effort,
-      options: AMP_EFFORT_LEVELS.map((effort) => ({
+      currentValue: s.efforts[s.model],
+      options: effortLevels.map((effort) => ({
         value: effort,
         name: effort,
       })),
@@ -138,7 +161,7 @@ interface SessionState {
   active: boolean;
   mode: PermissionMode;
   model: AmpModelId;
-  effort: AmpEffort;
+  efforts: SessionEfforts;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -203,7 +226,7 @@ export class AmpAcpAgent implements Agent {
       active: false,
       mode: 'default',
       model: 'smart',
-      effort: 'medium',
+      efforts: { smart: 'high', deep: 'medium' },
       mcpConfig,
       cwd: params.cwd || process.cwd(),
     };
@@ -288,7 +311,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     };
 
     if (supportsReasoningEffort(s.model)) {
-      options.effort = s.effort;
+      options.effort = currentEffort(s);
     }
 
     if (s.mode === 'bypass') {
@@ -385,10 +408,20 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         s.model = params.value;
         break;
       case CONFIG_EFFORT:
-        if (!isAmpEffort(params.value)) {
-          throw new Error(`Unsupported effort: ${params.value}`);
+        if (!supportsReasoningEffort(s.model)) {
+          throw new Error(`Effort is not supported for Amp mode: ${s.model}`);
         }
-        s.effort = params.value;
+        if (s.model === 'smart') {
+          if (!isSmartEffort(params.value)) {
+            throw new Error(`Unsupported effort for smart: ${params.value}`);
+          }
+          s.efforts.smart = params.value;
+        } else {
+          if (!isDeepEffort(params.value)) {
+            throw new Error(`Unsupported effort for deep: ${params.value}`);
+          }
+          s.efforts.deep = params.value;
+        }
         break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);

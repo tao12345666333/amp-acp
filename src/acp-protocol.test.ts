@@ -67,6 +67,14 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.configOptions).toHaveLength(3);
     expect(response.configOptions?.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
     expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'model', 'thought_level']);
+    expect(response.configOptions?.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'high',
+      options: [
+        { value: 'high', name: 'high' },
+        { value: 'xhigh', name: 'xhigh' },
+        { value: 'max', name: 'max' },
+      ],
+    });
   });
 
   it('should handle setSessionConfigOption', async () => {
@@ -106,6 +114,41 @@ describe('ACP Protocol End-to-End', () => {
       value: 'smart',
     });
     expect(smart.configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+  });
+
+  it('should scope effort options by Amp mode', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const deep = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'deep',
+    });
+    expect(deep.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'medium',
+      options: [
+        { value: 'low', name: 'low' },
+        { value: 'medium', name: 'medium' },
+        { value: 'xhigh', name: 'xhigh' },
+      ],
+    });
+
+    const smart = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'smart',
+    });
+    expect(smart.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'high',
+      options: [
+        { value: 'high', name: 'high' },
+        { value: 'xhigh', name: 'xhigh' },
+        { value: 'max', name: 'max' },
+      ],
+    });
   });
 
   it('should handle newSession with MCP servers', async () => {

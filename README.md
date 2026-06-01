@@ -76,7 +76,7 @@ Requires Node.js 18+.
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Configure permissions (*Default* or *Bypass*), Amp mode (`smart`, `deep`, or `rush`), and reasoning effort for `smart`/`deep` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`) via ACP config options
+- **Session configuration** — Configure permissions (*Default* or *Bypass*), Amp mode (`smart`, `deep`, or `rush`), and mode-specific reasoning effort (`smart`: `high`/`xhigh`/`max`, `deep`: `low`/`medium`/`xhigh`) via ACP config options
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 

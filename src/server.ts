@@ -11,6 +11,8 @@ import {
   type AuthenticateRequest,
   type AuthenticateResponse,
   type CancelNotification,
+  type SetSessionConfigOptionRequest,
+  type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type SetSessionModelRequest,
@@ -20,14 +22,21 @@ import {
   type WriteTextFileRequest,
   type WriteTextFileResponse,
   type ClientCapabilities,
+  type SessionConfigOption,
 } from '@agentclientprotocol/sdk';
-import { execute, type StreamMessage } from '@ampcode/sdk';
+import { execute, type AmpOptions, type StreamMessage } from '@ampcode/sdk';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 import path from 'node:path';
 import packageJson from '../package.json';
 
 const PACKAGE_VERSION: string = packageJson.version;
+const CONFIG_PERMISSION = 'permission';
+const CONFIG_AMP_MODE = 'amp-mode';
+const CONFIG_EFFORT = 'effort';
+const PERMISSION_MODES = ['default', 'bypass'] as const;
+const AMP_SMART_EFFORT_LEVELS = ['high', 'xhigh', 'max'] as const;
+const AMP_DEEP_EFFORT_LEVELS = ['low', 'medium', 'xhigh'] as const;
 
 const AMP_MODELS = [
   {
@@ -48,9 +57,101 @@ const AMP_MODELS = [
 ] as const;
 
 type AmpModelId = typeof AMP_MODELS[number]['modelId'];
+type AmpEffortMode = Extract<AmpModelId, 'smart' | 'deep'>;
+type PermissionMode = typeof PERMISSION_MODES[number];
+type AmpSmartEffort = typeof AMP_SMART_EFFORT_LEVELS[number];
+type AmpDeepEffort = typeof AMP_DEEP_EFFORT_LEVELS[number];
+type AmpEffort = AmpSmartEffort | AmpDeepEffort;
+
+interface SessionEfforts {
+  smart: AmpSmartEffort;
+  deep: AmpDeepEffort;
+}
 
 function isAmpModelId(modelId: string): modelId is AmpModelId {
   return AMP_MODELS.some((model) => model.modelId === modelId);
+}
+
+function isPermissionMode(mode: string): mode is PermissionMode {
+  return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
+}
+
+function supportsReasoningEffort(model: AmpModelId): model is AmpEffortMode {
+  return model === 'smart' || model === 'deep';
+}
+
+function effortLevelsForModel(model: AmpEffortMode): readonly AmpEffort[] {
+  return model === 'smart' ? AMP_SMART_EFFORT_LEVELS : AMP_DEEP_EFFORT_LEVELS;
+}
+
+function isSmartEffort(effort: string): effort is AmpSmartEffort {
+  return AMP_SMART_EFFORT_LEVELS.some((level) => level === effort);
+}
+
+function isDeepEffort(effort: string): effort is AmpDeepEffort {
+  return AMP_DEEP_EFFORT_LEVELS.some((level) => level === effort);
+}
+
+function currentEffort(s: Pick<SessionState, 'model' | 'efforts'>): AmpEffort | undefined {
+  if (!supportsReasoningEffort(s.model)) return undefined;
+  return s.efforts[s.model];
+}
+
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'efforts'>): SessionConfigOption[] {
+  const options: SessionConfigOption[] = [
+    {
+      type: 'select',
+      id: CONFIG_PERMISSION,
+      name: 'Permissions',
+      description: 'Controls whether Amp uses configured permissions or force-allows tool calls.',
+      category: 'mode',
+      currentValue: s.mode,
+      options: [
+        {
+          value: 'default',
+          name: 'Default',
+          description:
+            "Use Amp's configured behavior. As of Amp Neo, tools run without prompts unless you've opted into permissions.",
+        },
+        {
+          value: 'bypass',
+          name: 'Bypass',
+          description: 'Force-allow every tool call, overriding any configured permissions plugin.',
+        },
+      ],
+    },
+    {
+      type: 'select',
+      id: CONFIG_AMP_MODE,
+      name: 'Amp Mode',
+      description: 'Select the Amp SDK execution mode.',
+      category: 'model',
+      currentValue: s.model,
+      options: AMP_MODELS.map((model) => ({
+        value: model.modelId,
+        name: model.name,
+        description: model.description,
+      })),
+    },
+  ];
+
+  if (supportsReasoningEffort(s.model)) {
+    const effortLevels = effortLevelsForModel(s.model);
+    options.push({
+      type: 'select',
+      id: CONFIG_EFFORT,
+      name: 'Effort',
+      description: `Set model reasoning effort for Amp ${s.model} mode.`,
+      category: 'thought_level',
+      currentValue: s.efforts[s.model],
+      options: effortLevels.map((effort) => ({
+        value: effort,
+        name: effort,
+      })),
+    });
+  }
+
+  return options;
 }
 
 interface SessionState {
@@ -58,8 +159,9 @@ interface SessionState {
   controller: AbortController | null;
   cancelled: boolean;
   active: boolean;
-  mode: string;
+  mode: PermissionMode;
   model: AmpModelId;
+  efforts: SessionEfforts;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -117,39 +219,22 @@ export class AmpAcpAgent implements Agent {
 
     const mcpConfig = convertAcpMcpServersToAmpConfig(params.mcpServers);
 
-    this.sessions.set(sessionId, {
+    const session: SessionState = {
       threadId: null,
       controller: null,
       cancelled: false,
       active: false,
       mode: 'default',
       model: 'smart',
+      efforts: { smart: 'high', deep: 'medium' },
       mcpConfig,
       cwd: params.cwd || process.cwd(),
-    });
+    };
+    this.sessions.set(sessionId, session);
 
     const result: NewSessionResponse = {
       sessionId,
-      models: {
-        currentModelId: 'smart',
-        availableModels: [...AMP_MODELS],
-      },
-      modes: {
-        currentModeId: 'default',
-        availableModes: [
-          {
-            id: 'default',
-            name: 'Default',
-            description:
-              "Use Amp's configured behavior. As of Amp Neo, tools run without prompts unless you've opted into permissions (e.g. amp.permissions, amp.dangerouslyAllowAll: false, or amp.guardedFiles.allowlist).",
-          },
-          {
-            id: 'bypass',
-            name: 'Bypass',
-            description: 'Force-allow every tool call, overriding any configured permissions plugin (dangerouslyAllowAll).',
-          },
-        ],
-      },
+      configOptions: buildSessionConfigOptions(session),
     };
 
     setImmediate(async () => {
@@ -219,11 +304,15 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
     }
 
-    const options: Record<string, unknown> = {
+    const options: AmpOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
     };
+
+    if (supportsReasoningEffort(s.model)) {
+      options.effort = currentEffort(s);
+    }
 
     if (s.mode === 'bypass') {
       options.dangerouslyAllowAll = true;
@@ -298,6 +387,62 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
   }
 
+  async setSessionConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {
+    const s = this.sessions.get(params.sessionId);
+    if (!s) throw new Error('Session not found');
+    if (typeof params.value !== 'string') {
+      throw new Error(`Unsupported value for ${params.configId}`);
+    }
+
+    switch (params.configId) {
+      case CONFIG_PERMISSION:
+        if (!isPermissionMode(params.value)) {
+          throw new Error(`Unsupported permission mode: ${params.value}`);
+        }
+        s.mode = params.value;
+        break;
+      case CONFIG_AMP_MODE:
+        if (!isAmpModelId(params.value)) {
+          throw new Error(`Unsupported Amp mode: ${params.value}`);
+        }
+        s.model = params.value;
+        break;
+      case CONFIG_EFFORT:
+        if (!supportsReasoningEffort(s.model)) {
+          throw new Error(`Effort is not supported for Amp mode: ${s.model}`);
+        }
+        if (s.model === 'smart') {
+          if (!isSmartEffort(params.value)) {
+            throw new Error(`Unsupported effort for smart: ${params.value}`);
+          }
+          s.efforts.smart = params.value;
+        } else {
+          if (!isDeepEffort(params.value)) {
+            throw new Error(`Unsupported effort for deep: ${params.value}`);
+          }
+          s.efforts.deep = params.value;
+        }
+        break;
+      default:
+        throw new Error(`Unsupported config option: ${params.configId}`);
+    }
+
+    const configOptions = buildSessionConfigOptions(s);
+    try {
+      await this.client.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'config_option_update',
+          configOptions,
+        },
+      });
+    } catch (e) {
+      console.error('[acp] failed to send config_option_update', e);
+    }
+
+    return { configOptions };
+  }
+
   async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
@@ -311,6 +456,9 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
+    if (!isPermissionMode(params.modeId)) {
+      throw new Error(`Unsupported mode: ${params.modeId}`);
+    }
     s.mode = params.modeId;
     return {};
   }

@@ -62,12 +62,93 @@ describe('ACP Protocol End-to-End', () => {
 
     expect(response.sessionId).toBeDefined();
     expect(response.sessionId).toMatch(/^S-/);
-    expect(response.models?.currentModelId).toBe('smart');
-    expect(response.models?.availableModels).toHaveLength(3);
-    expect(response.models?.availableModels?.map((m) => m.modelId)).toEqual(['smart', 'deep', 'rush']);
-    expect(response.modes?.currentModeId).toBe('default');
-    expect(response.modes?.availableModes).toHaveLength(2);
-    expect(response.modes?.availableModes?.map((m) => m.id)).toEqual(['default', 'bypass']);
+    expect(response.models).toBeUndefined();
+    expect(response.modes).toBeUndefined();
+    expect(response.configOptions).toHaveLength(3);
+    expect(response.configOptions?.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+    expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'model', 'thought_level']);
+    expect(response.configOptions?.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'high',
+      options: [
+        { value: 'high', name: 'high' },
+        { value: 'xhigh', name: 'xhigh' },
+        { value: 'max', name: 'max' },
+      ],
+    });
+  });
+
+  it('should handle setSessionConfigOption', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'effort',
+      value: 'xhigh',
+    });
+
+    expect(result.configOptions).toHaveLength(3);
+    expect(result.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'xhigh',
+    });
+  });
+
+  it('should hide effort config when Amp mode is rush', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const rush = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'rush',
+    });
+    expect(rush.configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode']);
+
+    const smart = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'smart',
+    });
+    expect(smart.configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+  });
+
+  it('should scope effort options by Amp mode', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const deep = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'deep',
+    });
+    expect(deep.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'medium',
+      options: [
+        { value: 'low', name: 'low' },
+        { value: 'medium', name: 'medium' },
+        { value: 'xhigh', name: 'xhigh' },
+      ],
+    });
+
+    const smart = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'smart',
+    });
+    expect(smart.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'high',
+      options: [
+        { value: 'high', name: 'high' },
+        { value: 'xhigh', name: 'xhigh' },
+        { value: 'max', name: 'max' },
+      ],
+    });
   });
 
   it('should handle newSession with MCP servers', async () => {

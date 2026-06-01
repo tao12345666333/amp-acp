@@ -171,6 +171,19 @@ describe('MCP Configuration Passthrough', () => {
   });
 
   describe('Edge cases', () => {
+    it('should ignore ACP transport MCP servers', () => {
+      const acpMcpServers: McpServer[] = [
+        {
+          type: 'acp',
+          id: 'mcp-1',
+          name: 'embedded',
+        },
+      ];
+
+      const result = convertAcpMcpServersToAmpConfig(acpMcpServers);
+      expect(result).toEqual({});
+    });
+
     it('should handle empty mcpServers array', () => {
       const result = convertAcpMcpServersToAmpConfig([]);
       expect(result).toEqual({});

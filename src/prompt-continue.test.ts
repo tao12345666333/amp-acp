@@ -81,6 +81,20 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(capturedCalls[0]!.options.effort).toBe('xhigh');
   });
 
+  it('does not pass reasoning effort for rush mode', async () => {
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'effort', value: 'xhigh' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'rush' });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0]!.options.mode).toBe('rush');
+    expect(capturedCalls[0]!.options.effort).toBeUndefined();
+  });
+
   it('passes selected permission config to the SDK', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
     await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'permission', value: 'bypass' });

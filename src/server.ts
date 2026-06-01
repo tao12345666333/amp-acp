@@ -71,8 +71,12 @@ function isAmpEffort(effort: string): effort is AmpEffort {
   return AMP_EFFORT_LEVELS.some((level) => level === effort);
 }
 
+function supportsReasoningEffort(model: AmpModelId): boolean {
+  return model === 'smart' || model === 'deep';
+}
+
 function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'effort'>): SessionConfigOption[] {
-  return [
+  const options: SessionConfigOption[] = [
     {
       type: 'select',
       id: CONFIG_PERMISSION,
@@ -107,7 +111,10 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'eff
         description: model.description,
       })),
     },
-    {
+  ];
+
+  if (supportsReasoningEffort(s.model)) {
+    options.push({
       type: 'select',
       id: CONFIG_EFFORT,
       name: 'Effort',
@@ -118,8 +125,10 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'eff
         value: effort,
         name: effort,
       })),
-    },
-  ];
+    });
+  }
+
+  return options;
 }
 
 interface SessionState {
@@ -278,7 +287,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       mode: s.model,
     };
 
-    if (s.model === 'smart' || s.model === 'deep') {
+    if (supportsReasoningEffort(s.model)) {
       options.effort = s.effort;
     }
 

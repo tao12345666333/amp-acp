@@ -87,6 +87,27 @@ describe('ACP Protocol End-to-End', () => {
     });
   });
 
+  it('should hide effort config when Amp mode is rush', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const rush = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'rush',
+    });
+    expect(rush.configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode']);
+
+    const smart = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'smart',
+    });
+    expect(smart.configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+  });
+
   it('should handle newSession with MCP servers', async () => {
     const response = await agentConnection.newSession({
       cwd: '/tmp/test',

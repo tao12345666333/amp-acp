@@ -120,7 +120,7 @@ describe('Binary integration tests', () => {
     expect(label).toBe('Amp API Key Setup');
   });
 
-  it('session/new returns sessionId and modes', async () => {
+  it('session/new returns sessionId and config options', async () => {
     const resp = await sendAndWait('session/new', {
       cwd: '/tmp/test',
       mcpServers: [],
@@ -130,10 +130,34 @@ describe('Binary integration tests', () => {
     expect(resp.result!.sessionId).toBeDefined();
     expect(typeof resp.result!.sessionId).toBe('string');
     expect((resp.result!.sessionId as string).startsWith('S-')).toBe(true);
-    const modes = resp.result!.modes as Record<string, unknown>;
-    expect(modes.currentModeId).toBe('default');
-    const availableModes = modes.availableModes as Array<{ id: string }>;
-    expect(availableModes.map((m) => m.id)).toEqual(['default', 'bypass']);
+    expect(resp.result!.modes).toBeUndefined();
+    expect(resp.result!.models).toBeUndefined();
+    const configOptions = resp.result!.configOptions as Array<{ id: string; category?: string; currentValue?: string; options?: Array<{ value: string }> }>;
+    expect(configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+    expect(configOptions.map((option) => option.category)).toEqual(['mode', 'model', 'thought_level']);
+    const effort = configOptions.find((option) => option.id === 'effort')!;
+    expect(effort.currentValue).toBe('high');
+    expect(effort.options?.map((option) => option.value)).toEqual(['high', 'xhigh', 'max']);
+  });
+
+  it('session/set_config_option updates effort options for Amp mode', async () => {
+    const sessionResp = await sendAndWait('session/new', {
+      cwd: '/tmp/test',
+      mcpServers: [],
+    });
+    const sessionId = sessionResp.result!.sessionId as string;
+
+    const resp = await sendAndWait('session/set_config_option', {
+      sessionId,
+      configId: 'amp-mode',
+      value: 'deep',
+    });
+
+    expect(resp.result).toBeDefined();
+    const configOptions = resp.result!.configOptions as Array<{ id: string; currentValue?: string; options?: Array<{ value: string }> }>;
+    const effort = configOptions.find((option) => option.id === 'effort')!;
+    expect(effort.currentValue).toBe('medium');
+    expect(effort.options?.map((option) => option.value)).toEqual(['low', 'medium', 'xhigh']);
   });
 
   it('session/new with MCP servers returns valid sessionId', async () => {

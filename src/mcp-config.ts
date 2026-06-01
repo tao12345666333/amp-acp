@@ -1,14 +1,7 @@
 import type { McpServer } from '@agentclientprotocol/sdk';
+import type { AmpOptions } from '@ampcode/sdk';
 
-interface AmpMcpServerConfig {
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-}
-
-export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
+export type AmpMcpConfig = Exclude<AmpOptions['mcpConfig'], string | undefined>;
 
 export function convertAcpMcpServersToAmpConfig(mcpServers: McpServer[] | undefined | null): AmpMcpConfig {
   const mcpConfig: AmpMcpConfig = {};

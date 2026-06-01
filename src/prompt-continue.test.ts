@@ -58,7 +58,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
   it('passes selected Amp model as SDK mode', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionModel({ sessionId: session.sessionId, modelId: 'deep' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'deep' });
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],
@@ -66,6 +66,31 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.mode).toBe('deep');
+  });
+
+  it('passes selected Amp reasoning effort to the SDK', async () => {
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'effort', value: 'xhigh' });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0]!.options.mode).toBe('smart');
+    expect(capturedCalls[0]!.options.effort).toBe('xhigh');
+  });
+
+  it('passes selected permission config to the SDK', async () => {
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'permission', value: 'bypass' });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0]!.options.dangerouslyAllowAll).toBe(true);
   });
 
   it('sets continue=true on first prompt when AMP_ACP_CONTINUE_LATEST is set', async () => {

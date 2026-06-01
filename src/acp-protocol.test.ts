@@ -62,12 +62,29 @@ describe('ACP Protocol End-to-End', () => {
 
     expect(response.sessionId).toBeDefined();
     expect(response.sessionId).toMatch(/^S-/);
-    expect(response.models?.currentModelId).toBe('smart');
-    expect(response.models?.availableModels).toHaveLength(3);
-    expect(response.models?.availableModels?.map((m) => m.modelId)).toEqual(['smart', 'deep', 'rush']);
-    expect(response.modes?.currentModeId).toBe('default');
-    expect(response.modes?.availableModes).toHaveLength(2);
-    expect(response.modes?.availableModes?.map((m) => m.id)).toEqual(['default', 'bypass']);
+    expect(response.models).toBeUndefined();
+    expect(response.modes).toBeUndefined();
+    expect(response.configOptions).toHaveLength(3);
+    expect(response.configOptions?.map((option) => option.id)).toEqual(['permission', 'amp-mode', 'effort']);
+    expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'model', 'thought_level']);
+  });
+
+  it('should handle setSessionConfigOption', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'effort',
+      value: 'xhigh',
+    });
+
+    expect(result.configOptions).toHaveLength(3);
+    expect(result.configOptions.find((option) => option.id === 'effort')).toMatchObject({
+      currentValue: 'xhigh',
+    });
   });
 
   it('should handle newSession with MCP servers', async () => {

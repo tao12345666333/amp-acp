@@ -15,8 +15,6 @@ import {
   type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
-  type SetSessionModelRequest,
-  type SetSessionModelResponse,
   type ReadTextFileRequest,
   type ReadTextFileResponse,
   type WriteTextFileRequest,
@@ -441,16 +439,6 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
 
     return { configOptions };
-  }
-
-  async setSessionModel(params: SetSessionModelRequest): Promise<SetSessionModelResponse> {
-    const s = this.sessions.get(params.sessionId);
-    if (!s) throw new Error('Session not found');
-    if (!isAmpModelId(params.modelId)) {
-      throw new Error(`Unsupported model: ${params.modelId}`);
-    }
-    s.model = params.modelId;
-    return {};
   }
 
   async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {

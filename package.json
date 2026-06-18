@@ -26,7 +26,7 @@
     "test:all": "bun run test && bun run test:binary"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.25.0",
+    "@agentclientprotocol/sdk": "0.26.0",
     "@ampcode/cli": "0.0.1780291930-gf6d536",
     "@ampcode/sdk": "0.1.0-20260605144103-g77da114"
   },

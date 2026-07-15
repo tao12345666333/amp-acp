@@ -5,7 +5,7 @@
     "": {
       "name": "amp-acp",
       "dependencies": {
-        "@agentclientprotocol/sdk": "0.25.0",
+        "@agentclientprotocol/sdk": "1.2.1",
         "@ampcode/cli": "0.0.1780291930-gf6d536",
         "@ampcode/sdk": "0.1.0-20260605144103-g77da114",
       },
@@ -16,7 +16,7 @@
     },
   },
   "packages": {
-    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.25.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-wU1VgXNtMvdVotX49txc3WJUDV+/QbLpsgjMvFhlRmp37osdLbI7L7y+iwAlQATwfjLxcv1r1p3ZxZBcXlGhcQ=="],
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.2.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-jwYUdOQR7tc+Zfch53VL4JJyUNK/46q03uUTYb+PjECsmnNl94XFXOfYLJ8RBpMNidXd1rpOAVgb0vqD98xImA=="],
 
     "@ampcode/cli": ["@ampcode/cli@0.0.1780291930-gf6d536", "", { "optionalDependencies": { "@ampcode/cli-darwin-arm64": "0.0.1780291930-gf6d536", "@ampcode/cli-darwin-x64": "0.0.1780291930-gf6d536", "@ampcode/cli-linux-arm64": "0.0.1780291930-gf6d536", "@ampcode/cli-linux-x64": "0.0.1780291930-gf6d536", "@ampcode/cli-win32-x64": "0.0.1780291930-gf6d536" }, "bin": { "amp": "bin/amp.exe" } }, "sha512-9zgUrkMyLnr7nnhslMwpow6EwFBM2mbHz1yH5pJDAl1wi30E0zdrDcBxoXXXGrRdBVHZv4IqGl00qxiwBraKSw=="],
 

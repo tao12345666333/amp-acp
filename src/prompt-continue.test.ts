@@ -57,24 +57,12 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.continue).toBeUndefined();
     expect(capturedCalls[0]!.options.mode).toBe('smart');
+    expect(capturedCalls[0]!.options.effort).toBe('high');
   });
 
-  it('passes selected Amp model as SDK mode', async () => {
+  it('maps selected Amp mode to legacy SDK options', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'deep' });
-    await agent.prompt({
-      sessionId: session.sessionId,
-      prompt: [{ type: 'text', text: 'hello' }],
-    });
-
-    expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('deep');
-    expect(capturedCalls[0]!.options.effort).toBe('medium');
-  });
-
-  it('passes selected Amp reasoning effort to the SDK', async () => {
-    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'effort', value: 'xhigh' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'ultra' });
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],
@@ -82,27 +70,12 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.mode).toBe('smart');
-    expect(capturedCalls[0]!.options.effort).toBe('xhigh');
+    expect(capturedCalls[0]!.options.effort).toBe('max');
   });
 
-  it('passes selected deep reasoning effort to the SDK', async () => {
+  it('maps low mode to legacy SDK rush mode', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'deep' });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'effort', value: 'low' });
-    await agent.prompt({
-      sessionId: session.sessionId,
-      prompt: [{ type: 'text', text: 'hello' }],
-    });
-
-    expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('deep');
-    expect(capturedCalls[0]!.options.effort).toBe('low');
-  });
-
-  it('does not pass reasoning effort for rush mode', async () => {
-    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'effort', value: 'xhigh' });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'rush' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'low' });
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],

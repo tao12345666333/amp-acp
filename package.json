@@ -23,11 +23,11 @@
     "lint": "tsc --noEmit",
     "test": "bun test src/",
     "test:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/",
+    "test:e2e:real": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/acp-real-cli-e2e.test.ts",
     "test:all": "bun run test && bun run test:binary"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.2.1",
-    "@ampcode/cli": "0.0.1780291930-gf6d536",
     "@ampcode/sdk": "0.1.0-20260605144103-g77da114"
   },
   "devDependencies": {

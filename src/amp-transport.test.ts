@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildAmpCliArgs,
+  buildAmpSdkOptions,
   createAmpTransport,
   createCliTransport,
   type AmpExecutionOptions,
@@ -13,7 +14,7 @@ import {
 const baseOptions: AmpExecutionOptions = {
   cwd: '/tmp/project',
   env: { TERM: 'dumb' },
-  mode: 'smart',
+  mode: 'medium',
 };
 
 let fixtureDir: string;
@@ -71,15 +72,21 @@ describe('Amp transport', () => {
       '--execute',
       '--stream-json',
       '--mode',
-      'smart',
+      'medium',
     ]);
+  });
+
+  it('maps current modes to the legacy SDK mode and effort options', () => {
+    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'low' })).toMatchObject({ mode: 'rush' });
+    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'medium' })).toMatchObject({ mode: 'smart', effort: 'high' });
+    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'high' })).toMatchObject({ mode: 'smart', effort: 'xhigh' });
+    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'ultra' })).toMatchObject({ mode: 'smart', effort: 'max' });
   });
 
   it('builds arguments for continuing a specific CLI thread', () => {
     expect(buildAmpCliArgs({
       ...baseOptions,
       continue: 'T-test-thread',
-      effort: 'xhigh',
       dangerouslyAllowAll: true,
       mcpConfig: { exa: { url: 'https://mcp.exa.ai/mcp' } },
     })).toEqual([
@@ -89,9 +96,7 @@ describe('Amp transport', () => {
       '--execute',
       '--stream-json',
       '--mode',
-      'smart',
-      '--effort',
-      'xhigh',
+      'medium',
       '--dangerously-allow-all',
       '--mcp-config',
       '{"exa":{"url":"https://mcp.exa.ai/mcp"}}',

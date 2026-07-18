@@ -88,7 +88,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Configure permissions (*Default* or *Bypass*), Amp mode (`smart`, `deep`, or `rush`), and mode-specific reasoning effort (`smart`: `high`/`xhigh`/`max`, `deep`: `low`/`medium`/`xhigh`) via ACP config options
+- **Session configuration** — Configure permissions (*Default* or *Bypass*) and the current Amp mode (`low`, `medium`, `high`, or `ultra`) via ACP config options
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 
@@ -98,7 +98,7 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 
 ### Amp execution transport
 
-By default, amp-acp executes the bundled Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback.
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a legacy compatibility fallback; current Amp modes are mapped to the closest legacy SDK mode and effort settings.
 
 ## MCP Configuration Passthrough
 
@@ -174,6 +174,14 @@ bun test src/        # Run unit tests
 bun run test:binary  # Run binary integration and ACP client E2E tests
 bun run test:all     # Run all tests
 ```
+
+The regular suite uses a deterministic fake CLI and is safe for CI. Maintainers can additionally verify the complete path against their installed, authenticated Amp CLI:
+
+```bash
+AMP_ACP_LIVE_E2E=1 AMP_ACP_REAL_CLI_PATH="$(command -v amp)" bun run test:e2e:real
+```
+
+This opt-in test is never enabled by CI. It creates a temporary workspace, runs two short prompts in `low` mode, verifies streaming and same-thread continuation through the official ACP client SDK, and consumes a small amount of Amp usage.
 
 ## Troubleshooting
 

@@ -21,8 +21,7 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
-  mode?: 'deep' | 'smart' | 'rush' | 'large';
-  effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  mode?: 'low' | 'medium' | 'high' | 'ultra';
   dangerouslyAllowAll?: boolean;
   mcpConfig?: AmpMcpConfig;
   continue?: boolean | string;
@@ -55,11 +54,41 @@ const sdkTransport: AmpTransport = {
   execute(request) {
     return execute({
       prompt: request.prompt,
-      options: request.options as AmpOptions,
+      options: buildAmpSdkOptions(request.options),
       signal: request.signal,
     });
   },
 };
+
+export function buildAmpSdkOptions(options: AmpExecutionOptions): AmpOptions {
+  const sdkOptions: AmpOptions = {
+    cwd: options.cwd,
+    env: options.env,
+    dangerouslyAllowAll: options.dangerouslyAllowAll,
+    mcpConfig: options.mcpConfig,
+    continue: options.continue,
+  };
+
+  switch (options.mode) {
+    case 'low':
+      sdkOptions.mode = 'rush';
+      break;
+    case 'medium':
+      sdkOptions.mode = 'smart';
+      sdkOptions.effort = 'high';
+      break;
+    case 'high':
+      sdkOptions.mode = 'smart';
+      sdkOptions.effort = 'xhigh';
+      break;
+    case 'ultra':
+      sdkOptions.mode = 'smart';
+      sdkOptions.effort = 'max';
+      break;
+  }
+
+  return sdkOptions;
+}
 
 export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
   const args: string[] = [];
@@ -72,7 +101,6 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
 
   args.push('--execute', '--stream-json');
   if (options.mode) args.push('--mode', options.mode);
-  if (options.effort) args.push('--effort', options.effort);
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));
 

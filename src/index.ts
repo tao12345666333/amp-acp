@@ -175,7 +175,9 @@ if (process.argv.includes('--setup')) {
     }
   }
 
-  preferBundledAmpCliBinary();
+  if (process.env.AMP_ACP_TRANSPORT === 'sdk') {
+    preferBundledAmpCliBinary();
+  }
 
   runAcp();
 

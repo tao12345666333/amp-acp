@@ -46,9 +46,23 @@ async function collect(stream: AsyncIterable<AmpStreamMessage>): Promise<AmpStre
 }
 
 describe('Amp transport', () => {
+  it('uses the CLI transport by default', () => {
+    const originalTransport = process.env.AMP_ACP_TRANSPORT;
+    delete process.env.AMP_ACP_TRANSPORT;
+    try {
+      expect(createAmpTransport().name).toBe('cli');
+    } finally {
+      if (originalTransport === undefined) {
+        delete process.env.AMP_ACP_TRANSPORT;
+      } else {
+        process.env.AMP_ACP_TRANSPORT = originalTransport;
+      }
+    }
+  });
+
   it('selects both supported transports', () => {
-    expect(createAmpTransport('sdk')).toBeDefined();
-    expect(createAmpTransport('cli')).toBeDefined();
+    expect(createAmpTransport('sdk').name).toBe('sdk');
+    expect(createAmpTransport('cli').name).toBe('cli');
     expect(() => createAmpTransport('other')).toThrow('Unsupported AMP_ACP_TRANSPORT: other');
   });
 

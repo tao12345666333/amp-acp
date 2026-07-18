@@ -86,7 +86,7 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 
 ### Amp execution transport
 
-By default, amp-acp uses `@ampcode/sdk` to execute Amp. Set `AMP_ACP_TRANSPORT=cli` to use the bundled Amp CLI directly with its streaming JSON interface instead. The CLI transport is experimental and is intended for compatibility testing against the SDK transport.
+By default, amp-acp executes the bundled Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback.
 
 ## MCP Configuration Passthrough
 

@@ -13,7 +13,10 @@ mock.module('@ampcode/sdk', () => ({
   },
 }));
 
-const { AmpAcpAgent } = await import('./server.js');
+const [{ AmpAcpAgent }, { createAmpTransport }] = await Promise.all([
+  import('./server.js'),
+  import('./amp-transport.js'),
+]);
 
 const mockClient = {
   sessionUpdate: async () => {},
@@ -32,7 +35,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
   beforeEach(async () => {
     capturedCalls.length = 0;
     delete process.env.AMP_ACP_CONTINUE_LATEST;
-    agent = new AmpAcpAgent(mockClient);
+    agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'));
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 

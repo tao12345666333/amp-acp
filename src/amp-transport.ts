@@ -46,10 +46,12 @@ export interface AmpExecutionRequest {
 }
 
 export interface AmpTransport {
+  readonly name: 'cli' | 'sdk';
   execute(request: AmpExecutionRequest): AsyncIterable<AmpStreamMessage>;
 }
 
 const sdkTransport: AmpTransport = {
+  name: 'sdk',
   execute(request) {
     return execute({
       prompt: request.prompt,
@@ -82,6 +84,7 @@ export function createCliTransport(
   commandArgs: string[] = [],
 ): AmpTransport {
   return {
+    name: 'cli',
     async *execute({ prompt, options, signal }) {
       signal.throwIfAborted();
 
@@ -129,7 +132,7 @@ export function createCliTransport(
   };
 }
 
-export function createAmpTransport(name = process.env.AMP_ACP_TRANSPORT ?? 'sdk'): AmpTransport {
+export function createAmpTransport(name = process.env.AMP_ACP_TRANSPORT ?? 'cli'): AmpTransport {
   switch (name) {
     case 'sdk':
       return sdkTransport;

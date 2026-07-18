@@ -27,5 +27,5 @@ jobs:
       - name: Unit tests
         run: bun run test
 
-      - name: Binary integration tests
+      - name: Binary and ACP client end-to-end tests
         run: bun run test:binary

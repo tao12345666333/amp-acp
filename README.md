@@ -7,6 +7,17 @@
 
 Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-compatible clients such as [Zed](https://zed.dev) or [Toad](https://github.com/batrachianai/toad).
 
+## Prerequisites
+
+amp-acp uses the Amp CLI as its default execution runtime. Install the [latest Amp CLI](https://ampcode.com/manual#get-started), sign in, and verify it is available before installing the adapter:
+
+```bash
+amp login
+amp --version
+```
+
+If your editor does not inherit your shell `PATH`, set `AMP_CLI_PATH` to the absolute path printed by `command -v amp` (macOS/Linux) or `where amp` (Windows).
+
 ## Installation
 
 ### Option 1: Zed ACP Registry (Recommended)
@@ -21,7 +32,7 @@ Zed will automatically download the correct binary for your platform.
 
 ### Option 2: Pre-built Binary
 
-Download a standalone binary from the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page — no runtime dependencies required.
+Download the adapter binary from the [GitHub Releases](https://github.com/tao12345666333/amp-acp/releases) page. The adapter itself has no JavaScript runtime dependency, but the Amp CLI described above is required for agent execution.
 
 | Platform | Architecture | Binary |
 |----------|-------------|--------|
@@ -38,7 +49,10 @@ Download the binary for your platform, make it executable (`chmod +x` on Linux/m
   "agent_servers": {
     "Amp": {
       "type": "custom",
-      "command": "/path/to/amp-acp-darwin-arm64"
+      "command": "/path/to/amp-acp-darwin-arm64",
+      "env": {
+        "AMP_CLI_PATH": "/absolute/path/to/amp"
+      }
     }
   }
 }
@@ -54,7 +68,7 @@ Download the binary for your platform, make it executable (`chmod +x` on Linux/m
       "command": "npx",
       "args": ["-y", "amp-acp"],
       "env": {
-        "AMP_API_KEY": "your-api-key-here"
+        "AMP_CLI_PATH": "/absolute/path/to/amp"
       }
     }
   }
@@ -65,9 +79,7 @@ Requires Node.js 18+.
 
 ## Authentication
 
-**If you [have Amp CLI installed](https://ampcode.com/manual#getting-started-command-line-interface)**: Run `amp login` first — credentials are shared automatically.
-
-**If you don't have Amp CLI**: Run `amp-acp --setup` to configure your API key interactively. Alternatively, you can start a chat in Zed's Agent Panel — it will automatically trigger the setup flow if no credentials are found, just follow the prompts.
+Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp credentials. For headless environments, `AMP_API_KEY` is also supported. `amp-acp --setup` remains available as an interactive API-key setup fallback.
 
 ![Auth Process](img/auth-process.png)
 
@@ -159,7 +171,7 @@ bun install
 bun run build        # Bundle to dist/index.js
 bun run lint         # Type-check with tsc
 bun test src/        # Run unit tests
-bun run test:binary  # Run binary integration tests
+bun run test:binary  # Run binary integration and ACP client E2E tests
 bun run test:all     # Run all tests
 ```
 
@@ -169,7 +181,9 @@ bun run test:all     # Run all tests
 
 **Connection issues**: Restart Zed and try again. The adapter creates a fresh connection each time.
 
-**Tool execution problems**: Check Zed's output panel for detailed error messages from the Amp SDK.
+**Amp CLI not found**: Run `amp --version` in a terminal. If it works there but not in your editor, set `AMP_CLI_PATH` to the absolute CLI path in the agent server environment.
+
+**Tool execution problems**: Check Zed's output panel for detailed errors from the Amp CLI.
 
 **MCP server not connecting**: Ensure the MCP server command is correct and any required environment variables are set. Check Zed's logs for connection errors.
 

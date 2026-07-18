@@ -342,7 +342,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           s.threadId = message.session_id;
         }
 
-        if (message.type === 'assistant') {
+        if (message.type === 'assistant' || message.type === 'user') {
           for (const n of toAcpNotifications(message, params.sessionId)) {
             try {
               await this.client.sessionUpdate(n);

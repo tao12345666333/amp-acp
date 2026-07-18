@@ -22,7 +22,11 @@ import {
   type ClientCapabilities,
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk';
-import { execute, type AmpOptions, type StreamMessage } from '@ampcode/sdk';
+import {
+  createAmpTransport,
+  type AmpExecutionOptions,
+  type AmpTransport,
+} from './amp-transport.js';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 import path from 'node:path';
@@ -174,11 +178,13 @@ interface InitializeResponseWithAgentInfo extends InitializeResponse {
 
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
+  private transport: AmpTransport;
   sessions = new Map<string, SessionState>();
   private clientCapabilities?: ClientCapabilities;
 
-  constructor(client: AgentSideConnection) {
+  constructor(client: AgentSideConnection, transport = createAmpTransport()) {
     this.client = client;
+    this.transport = transport;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -302,7 +308,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
     }
 
-    const options: AmpOptions = {
+    const options: AmpExecutionOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
@@ -331,7 +337,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     s.controller = controller;
 
     try {
-      for await (const message of execute({ prompt: textInput, options, signal: controller.signal })) {
+      for await (const message of this.transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         if (!s.threadId && message.session_id) {
           s.threadId = message.session_id;
         }

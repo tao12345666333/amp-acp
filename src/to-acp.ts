@@ -45,7 +45,7 @@ type AmpContentBlock = AmpContentText | AmpContentImage | AmpContentThinking | A
 interface AmpMessage {
   type: string;
   message?: {
-    content: string | AmpContentBlock[];
+    content: unknown;
   };
   session_id?: string;
 }

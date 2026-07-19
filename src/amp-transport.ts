@@ -99,7 +99,7 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
     args.push('threads', 'continue', '--last');
   }
 
-  args.push('--execute', '--stream-json');
+  args.push('--execute', '--stream-json', '--no-archive-after-execute');
   if (options.mode) args.push('--mode', options.mode);
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));

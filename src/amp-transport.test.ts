@@ -71,6 +71,7 @@ describe('Amp transport', () => {
     expect(buildAmpCliArgs(baseOptions)).toEqual([
       '--execute',
       '--stream-json',
+      '--no-archive-after-execute',
       '--mode',
       'medium',
     ]);
@@ -95,6 +96,7 @@ describe('Amp transport', () => {
       'T-test-thread',
       '--execute',
       '--stream-json',
+      '--no-archive-after-execute',
       '--mode',
       'medium',
       '--dangerously-allow-all',

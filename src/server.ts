@@ -22,7 +22,11 @@ import {
   type ClientCapabilities,
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk';
-import { execute, type AmpOptions, type StreamMessage } from '@ampcode/sdk';
+import {
+  createAmpTransport,
+  type AmpExecutionOptions,
+  type AmpTransport,
+} from './amp-transport.js';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import { toAcpNotifications } from './to-acp.js';
 import path from 'node:path';
@@ -31,40 +35,33 @@ import packageJson from '../package.json';
 const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
-const CONFIG_EFFORT = 'effort';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
-const AMP_SMART_EFFORT_LEVELS = ['high', 'xhigh', 'max'] as const;
-const AMP_DEEP_EFFORT_LEVELS = ['low', 'medium', 'xhigh'] as const;
 
 const AMP_MODELS = [
   {
-    modelId: 'smart',
-    name: 'Smart',
-    description: 'Amp smart mode: maximum capability and autonomy for general coding tasks.',
+    modelId: 'low',
+    name: 'Low',
+    description: 'Fast and economical for simple, well-defined tasks.',
   },
   {
-    modelId: 'deep',
-    name: 'Deep',
-    description: 'Amp deep mode: extended reasoning for complex tasks.',
+    modelId: 'medium',
+    name: 'Medium',
+    description: 'Balanced capability and cost for everyday coding tasks.',
   },
   {
-    modelId: 'rush',
-    name: 'Rush',
-    description: 'Amp rush mode: fast responses for small, well-defined tasks.',
+    modelId: 'high',
+    name: 'High',
+    description: 'Greater capability and reasoning for difficult tasks.',
+  },
+  {
+    modelId: 'ultra',
+    name: 'Ultra',
+    description: 'Maximum capability for the most demanding tasks.',
   },
 ] as const;
 
 type AmpModelId = typeof AMP_MODELS[number]['modelId'];
-type AmpEffortMode = Extract<AmpModelId, 'smart' | 'deep'>;
 type PermissionMode = typeof PERMISSION_MODES[number];
-type AmpSmartEffort = typeof AMP_SMART_EFFORT_LEVELS[number];
-type AmpDeepEffort = typeof AMP_DEEP_EFFORT_LEVELS[number];
-type AmpEffort = AmpSmartEffort | AmpDeepEffort;
-
-interface SessionEfforts {
-  smart: AmpSmartEffort;
-  deep: AmpDeepEffort;
-}
 
 function isAmpModelId(modelId: string): modelId is AmpModelId {
   return AMP_MODELS.some((model) => model.modelId === modelId);
@@ -74,29 +71,8 @@ function isPermissionMode(mode: string): mode is PermissionMode {
   return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
 }
 
-function supportsReasoningEffort(model: AmpModelId): model is AmpEffortMode {
-  return model === 'smart' || model === 'deep';
-}
-
-function effortLevelsForModel(model: AmpEffortMode): readonly AmpEffort[] {
-  return model === 'smart' ? AMP_SMART_EFFORT_LEVELS : AMP_DEEP_EFFORT_LEVELS;
-}
-
-function isSmartEffort(effort: string): effort is AmpSmartEffort {
-  return AMP_SMART_EFFORT_LEVELS.some((level) => level === effort);
-}
-
-function isDeepEffort(effort: string): effort is AmpDeepEffort {
-  return AMP_DEEP_EFFORT_LEVELS.some((level) => level === effort);
-}
-
-function currentEffort(s: Pick<SessionState, 'model' | 'efforts'>): AmpEffort | undefined {
-  if (!supportsReasoningEffort(s.model)) return undefined;
-  return s.efforts[s.model];
-}
-
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'efforts'>): SessionConfigOption[] {
-  const options: SessionConfigOption[] = [
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model'>): SessionConfigOption[] {
+  return [
     {
       type: 'select',
       id: CONFIG_PERMISSION,
@@ -122,7 +98,7 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'eff
       type: 'select',
       id: CONFIG_AMP_MODE,
       name: 'Amp Mode',
-      description: 'Select the Amp SDK execution mode.',
+      description: 'Select the Amp execution mode.',
       category: 'model',
       currentValue: s.model,
       options: AMP_MODELS.map((model) => ({
@@ -132,24 +108,6 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'eff
       })),
     },
   ];
-
-  if (supportsReasoningEffort(s.model)) {
-    const effortLevels = effortLevelsForModel(s.model);
-    options.push({
-      type: 'select',
-      id: CONFIG_EFFORT,
-      name: 'Effort',
-      description: `Set model reasoning effort for Amp ${s.model} mode.`,
-      category: 'thought_level',
-      currentValue: s.efforts[s.model],
-      options: effortLevels.map((effort) => ({
-        value: effort,
-        name: effort,
-      })),
-    });
-  }
-
-  return options;
 }
 
 interface SessionState {
@@ -159,7 +117,6 @@ interface SessionState {
   active: boolean;
   mode: PermissionMode;
   model: AmpModelId;
-  efforts: SessionEfforts;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -174,11 +131,13 @@ interface InitializeResponseWithAgentInfo extends InitializeResponse {
 
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
+  private transport: AmpTransport;
   sessions = new Map<string, SessionState>();
   private clientCapabilities?: ClientCapabilities;
 
-  constructor(client: AgentSideConnection) {
+  constructor(client: AgentSideConnection, transport = createAmpTransport()) {
     this.client = client;
+    this.transport = transport;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -223,8 +182,7 @@ export class AmpAcpAgent implements Agent {
       cancelled: false,
       active: false,
       mode: 'default',
-      model: 'smart',
-      efforts: { smart: 'high', deep: 'medium' },
+      model: 'medium',
       mcpConfig,
       cwd: params.cwd || process.cwd(),
     };
@@ -302,15 +260,11 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
     }
 
-    const options: AmpOptions = {
+    const options: AmpExecutionOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
     };
-
-    if (supportsReasoningEffort(s.model)) {
-      options.effort = currentEffort(s);
-    }
 
     if (s.mode === 'bypass') {
       options.dangerouslyAllowAll = true;
@@ -331,12 +285,13 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     s.controller = controller;
 
     try {
-      for await (const message of execute({ prompt: textInput, options, signal: controller.signal })) {
+      for await (const message of this.transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         if (!s.threadId && message.session_id) {
           s.threadId = message.session_id;
+          console.error(`[amp] thread ${s.threadId}`);
         }
 
-        if (message.type === 'assistant') {
+        if (message.type === 'assistant' || message.type === 'user') {
           for (const n of toAcpNotifications(message, params.sessionId)) {
             try {
               await this.client.sessionUpdate(n);
@@ -404,22 +359,6 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           throw new Error(`Unsupported Amp mode: ${params.value}`);
         }
         s.model = params.value;
-        break;
-      case CONFIG_EFFORT:
-        if (!supportsReasoningEffort(s.model)) {
-          throw new Error(`Effort is not supported for Amp mode: ${s.model}`);
-        }
-        if (s.model === 'smart') {
-          if (!isSmartEffort(params.value)) {
-            throw new Error(`Unsupported effort for smart: ${params.value}`);
-          }
-          s.efforts.smart = params.value;
-        } else {
-          if (!isDeepEffort(params.value)) {
-            throw new Error(`Unsupported effort for deep: ${params.value}`);
-          }
-          s.efforts.deep = params.value;
-        }
         break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);

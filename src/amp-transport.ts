@@ -61,33 +61,15 @@ const sdkTransport: AmpTransport = {
 };
 
 export function buildAmpSdkOptions(options: AmpExecutionOptions): AmpOptions {
-  const sdkOptions: AmpOptions = {
+  return {
     cwd: options.cwd,
     env: options.env,
+    mode: options.mode,
+    noArchiveAfterExecute: true,
     dangerouslyAllowAll: options.dangerouslyAllowAll,
     mcpConfig: options.mcpConfig,
     continue: options.continue,
   };
-
-  switch (options.mode) {
-    case 'low':
-      sdkOptions.mode = 'rush';
-      break;
-    case 'medium':
-      sdkOptions.mode = 'smart';
-      sdkOptions.effort = 'high';
-      break;
-    case 'high':
-      sdkOptions.mode = 'smart';
-      sdkOptions.effort = 'xhigh';
-      break;
-    case 'ultra':
-      sdkOptions.mode = 'smart';
-      sdkOptions.effort = 'max';
-      break;
-  }
-
-  return sdkOptions;
 }
 
 export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {

@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.2.1",
-    "@ampcode/sdk": "0.1.0-20260605144103-g77da114"
+    "@ampcode/sdk": "0.1.0-20260717152646-g22b5e58"
   },
   "devDependencies": {
     "@types/bun": "^1.2.5",

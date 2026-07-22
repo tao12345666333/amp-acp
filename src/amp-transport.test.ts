@@ -77,11 +77,13 @@ describe('Amp transport', () => {
     ]);
   });
 
-  it('maps current modes to the legacy SDK mode and effort options', () => {
-    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'low' })).toMatchObject({ mode: 'rush' });
-    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'medium' })).toMatchObject({ mode: 'smart', effort: 'high' });
-    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'high' })).toMatchObject({ mode: 'smart', effort: 'xhigh' });
-    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'ultra' })).toMatchObject({ mode: 'smart', effort: 'max' });
+  it('passes current modes through to the SDK', () => {
+    for (const mode of ['low', 'medium', 'high', 'ultra'] as const) {
+      expect(buildAmpSdkOptions({ ...baseOptions, mode })).toMatchObject({
+        mode,
+        noArchiveAfterExecute: true,
+      });
+    }
   });
 
   it('builds arguments for continuing a specific CLI thread', () => {

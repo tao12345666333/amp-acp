@@ -56,11 +56,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.continue).toBeUndefined();
-    expect(capturedCalls[0]!.options.mode).toBe('smart');
-    expect(capturedCalls[0]!.options.effort).toBe('high');
+    expect(capturedCalls[0]!.options.mode).toBe('medium');
   });
 
-  it('maps selected Amp mode to legacy SDK options', async () => {
+  it('passes selected Amp mode to the SDK', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
     await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'ultra' });
     await agent.prompt({
@@ -69,11 +68,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
     });
 
     expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('smart');
-    expect(capturedCalls[0]!.options.effort).toBe('max');
+    expect(capturedCalls[0]!.options.mode).toBe('ultra');
   });
 
-  it('maps low mode to legacy SDK rush mode', async () => {
+  it('passes low mode to the SDK', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
     await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'low' });
     await agent.prompt({
@@ -82,8 +80,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     });
 
     expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('rush');
-    expect(capturedCalls[0]!.options.effort).toBeUndefined();
+    expect(capturedCalls[0]!.options.mode).toBe('low');
   });
 
   it('passes selected permission config to the SDK', async () => {

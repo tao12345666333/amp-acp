@@ -98,7 +98,7 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 
 ### Amp execution transport
 
-By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a legacy compatibility fallback; current Amp modes are mapped to the closest legacy SDK mode and effort settings.
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes.
 
 ## MCP Configuration Passthrough
 

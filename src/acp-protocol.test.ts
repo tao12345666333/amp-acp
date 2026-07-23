@@ -64,9 +64,20 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.sessionId).toMatch(/^S-/);
     expect(response.models).toBeUndefined();
     expect(response.modes).toBeUndefined();
-    expect(response.configOptions).toHaveLength(2);
-    expect(response.configOptions?.map((option) => option.id)).toEqual(['permission', 'amp-mode']);
-    expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'model']);
+    expect(response.configOptions).toHaveLength(3);
+    expect(response.configOptions?.map((option) => option.id)).toEqual([
+      'execution-environment',
+      'permission',
+      'amp-mode',
+    ]);
+    expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'mode', 'model']);
+    expect(response.configOptions?.find((option) => option.id === 'execution-environment')).toMatchObject({
+      currentValue: 'local',
+      options: [
+        { value: 'local', name: 'Local' },
+        { value: 'orb', name: 'Orb' },
+      ],
+    });
     expect(response.configOptions?.find((option) => option.id === 'amp-mode')).toMatchObject({
       currentValue: 'medium',
       options: [
@@ -90,9 +101,26 @@ describe('ACP Protocol End-to-End', () => {
       value: 'high',
     });
 
-    expect(result.configOptions).toHaveLength(2);
+    expect(result.configOptions).toHaveLength(3);
     expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
       currentValue: 'high',
+    });
+  });
+
+  it('should update the execution environment', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'execution-environment',
+      value: 'orb',
+    });
+
+    expect(result.configOptions.find((option) => option.id === 'execution-environment')).toMatchObject({
+      currentValue: 'orb',
     });
   });
 

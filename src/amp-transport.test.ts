@@ -86,6 +86,17 @@ describe('Amp transport', () => {
     }
   });
 
+  it('passes Orb execution options through to the SDK', () => {
+    expect(buildAmpSdkOptions({
+      ...baseOptions,
+      executor: 'orb',
+      project: 'acme/widgets',
+    })).toMatchObject({
+      executor: 'orb',
+      project: 'acme/widgets',
+    });
+  });
+
   it('builds arguments for continuing a specific CLI thread', () => {
     expect(buildAmpCliArgs({
       ...baseOptions,

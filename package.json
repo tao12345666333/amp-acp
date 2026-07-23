@@ -20,7 +20,7 @@
     "build": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js",
     "build:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp",
     "start": "bun dist/index.js",
-    "lint": "tsc --noEmit",
+    "lint": "bunx --bun tsc --noEmit",
     "test": "bun test src/",
     "test:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/",
     "test:e2e:real": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/acp-real-cli-e2e.test.ts",

@@ -22,6 +22,8 @@ export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
   mode?: 'low' | 'medium' | 'high' | 'ultra';
+  executor?: 'local' | 'orb';
+  project?: string;
   dangerouslyAllowAll?: boolean;
   mcpConfig?: AmpMcpConfig;
   continue?: boolean | string;
@@ -65,6 +67,8 @@ export function buildAmpSdkOptions(options: AmpExecutionOptions): AmpOptions {
     cwd: options.cwd,
     env: options.env,
     mode: options.mode,
+    executor: options.executor,
+    project: options.project,
     noArchiveAfterExecute: true,
     dangerouslyAllowAll: options.dangerouslyAllowAll,
     mcpConfig: options.mcpConfig,

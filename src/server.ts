@@ -35,7 +35,9 @@ import packageJson from '../package.json';
 const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
+const CONFIG_EXECUTOR = 'execution-environment';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
+const EXECUTORS = ['local', 'orb'] as const;
 
 const AMP_MODELS = [
   {
@@ -62,6 +64,7 @@ const AMP_MODELS = [
 
 type AmpModelId = typeof AMP_MODELS[number]['modelId'];
 type PermissionMode = typeof PERMISSION_MODES[number];
+type Executor = typeof EXECUTORS[number];
 
 function isAmpModelId(modelId: string): modelId is AmpModelId {
   return AMP_MODELS.some((model) => model.modelId === modelId);
@@ -71,8 +74,32 @@ function isPermissionMode(mode: string): mode is PermissionMode {
   return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model'>): SessionConfigOption[] {
+function isExecutor(executor: string): executor is Executor {
+  return EXECUTORS.some((candidate) => candidate === executor);
+}
+
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'executor'>): SessionConfigOption[] {
   return [
+    {
+      type: 'select',
+      id: CONFIG_EXECUTOR,
+      name: 'Execution Environment',
+      description: 'Choose whether Amp runs in the local project or a remote Amp Orb.',
+      category: 'mode',
+      currentValue: s.executor,
+      options: [
+        {
+          value: 'local',
+          name: 'Local',
+          description: 'Run Amp on this machine in the directory supplied by the ACP client.',
+        },
+        {
+          value: 'orb',
+          name: 'Orb',
+          description: 'Run Amp remotely. Project settings control permissions and MCP servers.',
+        },
+      ],
+    },
     {
       type: 'select',
       id: CONFIG_PERMISSION,
@@ -117,6 +144,7 @@ interface SessionState {
   active: boolean;
   mode: PermissionMode;
   model: AmpModelId;
+  executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -132,12 +160,18 @@ interface InitializeResponseWithAgentInfo extends InitializeResponse {
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
   private transport: AmpTransport;
+  private orbTransport: AmpTransport;
   sessions = new Map<string, SessionState>();
   private clientCapabilities?: ClientCapabilities;
 
-  constructor(client: AgentSideConnection, transport = createAmpTransport()) {
+  constructor(
+    client: AgentSideConnection,
+    transport = createAmpTransport(),
+    orbTransport = createAmpTransport('sdk'),
+  ) {
     this.client = client;
     this.transport = transport;
+    this.orbTransport = orbTransport;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -183,6 +217,7 @@ export class AmpAcpAgent implements Agent {
       active: false,
       mode: 'default',
       model: 'medium',
+      executor: 'local',
       mcpConfig,
       cwd: params.cwd || process.cwd(),
     };
@@ -264,14 +299,20 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
+      executor: s.executor,
     };
 
-    if (s.mode === 'bypass') {
-      options.dangerouslyAllowAll = true;
-    }
+    if (s.executor === 'orb') {
+      const project = process.env.AMP_ACP_ORB_PROJECT?.trim();
+      if (project) options.project = project;
+    } else {
+      if (s.mode === 'bypass') {
+        options.dangerouslyAllowAll = true;
+      }
 
-    if (Object.keys(s.mcpConfig).length > 0) {
-      options.mcpConfig = s.mcpConfig;
+      if (Object.keys(s.mcpConfig).length > 0) {
+        options.mcpConfig = s.mcpConfig;
+      }
     }
 
     if (s.threadId) {
@@ -285,7 +326,8 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     s.controller = controller;
 
     try {
-      for await (const message of this.transport.execute({ prompt: textInput, options, signal: controller.signal })) {
+      const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
+      for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         if (!s.threadId && message.session_id) {
           s.threadId = message.session_id;
           console.error(`[amp] thread ${s.threadId}`);
@@ -348,6 +390,12 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
 
     switch (params.configId) {
+      case CONFIG_EXECUTOR:
+        if (!isExecutor(params.value)) {
+          throw new Error(`Unsupported execution environment: ${params.value}`);
+        }
+        s.executor = params.value;
+        break;
       case CONFIG_PERMISSION:
         if (!isPermissionMode(params.value)) {
           throw new Error(`Unsupported permission mode: ${params.value}`);

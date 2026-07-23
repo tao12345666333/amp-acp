@@ -100,7 +100,7 @@ describe('AmpAcpAgent session/load', () => {
     expect(capturedCalls[1]!.options.continue).toBe('T-01234567-89ab-cdef-0123-456789abcdef');
   });
 
-  it('restores persisted permission mode and Amp mode', async () => {
+  it('restores persisted permission mode, Amp mode, and execution environment', async () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -118,6 +118,11 @@ describe('AmpAcpAgent session/load', () => {
       configId: 'permission',
       value: 'bypass',
     });
+    await first.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'execution-environment',
+      value: 'orb',
+    });
 
     const second = createAgent();
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
@@ -130,6 +135,7 @@ describe('AmpAcpAgent session/load', () => {
     const byId = new Map(loaded.configOptions?.map((option) => [option.id, option]));
     expect(byId.get('amp-mode')?.currentValue).toBe('high');
     expect(byId.get('permission')?.currentValue).toBe('bypass');
+    expect(byId.get('execution-environment')?.currentValue).toBe('orb');
 
     await second.prompt({
       sessionId: session.sessionId,
@@ -137,7 +143,9 @@ describe('AmpAcpAgent session/load', () => {
     });
     const lastCall = capturedCalls.at(-1)!;
     expect(lastCall.options.mode).toBe('high');
-    expect(lastCall.options.dangerouslyAllowAll).toBe(true);
+    expect(lastCall.options.executor).toBe('orb');
+    // Local-only options stay off Orb prompts even though bypass was persisted.
+    expect(lastCall.options.dangerouslyAllowAll).toBeUndefined();
   });
 
   it('replays thread history as session/update notifications on load', async () => {

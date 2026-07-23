@@ -37,13 +37,14 @@ describe('FileThreadMappingStore', () => {
 
   it('round-trips persisted session settings alongside the thread mapping', async () => {
     const store = new FileThreadMappingStore(stateDir);
-    await store.save({ sessionId, threadId, mode: 'bypass', model: 'high', cwd: '/tmp/project' });
+    await store.save({ sessionId, threadId, mode: 'bypass', model: 'high', executor: 'orb', cwd: '/tmp/project' });
 
     expect(await new FileThreadMappingStore(stateDir).load(sessionId)).toEqual({
       sessionId,
       threadId,
       mode: 'bypass',
       model: 'high',
+      executor: 'orb',
       cwd: '/tmp/project',
     });
   });

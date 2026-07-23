@@ -175,6 +175,13 @@ if (process.argv.includes('--setup')) {
     }
   }
 
+  // Orb execution always uses the SDK, which resolves @ampcode/cli's package
+  // binary before AMP_CLI_PATH. Repair Bun's placeholder package binary even
+  // when local execution uses the default direct CLI transport.
+  try {
+    repairAmpCliPackageBin(createRequire(import.meta.url));
+  } catch { /* fall through; the SDK will report a useful error if Orb execution is selected */ }
+
   if (process.env.AMP_ACP_TRANSPORT === 'sdk') {
     preferBundledAmpCliBinary();
   }

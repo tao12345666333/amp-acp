@@ -14,6 +14,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/server.ts` — `AmpAcpAgent` class: handles sessions, prompts, MCP config, and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
+- `src/plugin-modes.ts` — Discovers agent modes registered by installed Amp plugins (`// @amp-agent-mode` comments in plugin files)
 - `src/utils.ts` — Node-to-Web stream converters
 
 ## Code Style

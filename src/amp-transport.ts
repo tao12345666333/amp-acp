@@ -21,7 +21,10 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
-  mode?: 'low' | 'medium' | 'high' | 'ultra';
+  // Built-in modes (low/medium/high/ultra) plus any agent mode registered by
+  // an installed Amp plugin (e.g. "grok45"). Both the CLI --mode flag and the
+  // Amp SDK accept the mode key as a plain string.
+  mode?: string;
   dangerouslyAllowAll?: boolean;
   mcpConfig?: AmpMcpConfig;
   continue?: boolean | string;

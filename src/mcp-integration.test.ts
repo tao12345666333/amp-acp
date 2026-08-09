@@ -16,7 +16,8 @@ describe('AmpAcpAgent MCP Integration', () => {
   let agent: AmpAcpAgent;
 
   beforeEach(async () => {
-    agent = new AmpAcpAgent(mockClient);
+    // Isolate from plugin modes installed on the developer machine.
+    agent = new AmpAcpAgent(mockClient, undefined, () => []);
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 

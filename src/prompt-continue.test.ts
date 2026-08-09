@@ -35,7 +35,8 @@ describe('AmpAcpAgent prompt() continue option', () => {
   beforeEach(async () => {
     capturedCalls.length = 0;
     delete process.env.AMP_ACP_CONTINUE_LATEST;
-    agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'));
+    // Isolate from plugin modes installed on the developer machine.
+    agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), () => []);
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 

@@ -88,7 +88,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode (`low`, `medium`, `high`, or `ultra`) via ACP config options
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by locally installed Amp plugins (such as `grok45` from `@amp/grok-45-mode`)
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -131,7 +131,29 @@ During `session/load`, prior messages are replayed to the client as `session/upd
 
 ### Amp execution transport
 
-By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes.
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes, plus any plugin agent modes (see below).
+
+### Plugin agent modes
+
+Amp plugins can register custom agent modes with `amp.registerAgentMode(...)` plus a matching `// @amp-agent-mode {"key":"...","label":"..."}` metadata comment in the plugin source (see [Amp's plugin docs](https://ampcode.com/manual#plugins)). Examples include `grok45` from `@amp/grok-45-mode` or any mode listed on the [Modes page](https://ampcode.com/modes) under *Agent Mode Plugins*.
+
+amp-acp auto-discovers these modes by scanning plugin sources and appends them to the Amp Mode selector in your ACP client, so a mode installed via `amp plugins add` shows up immediately — for example, with the Grok 4.5 plugin installed you get:
+
+```text
+Amp Mode  [Medium ▾]
+  Low
+  Medium
+  High
+  Ultra
+  Grok 4.5
+```
+
+Discovery covers:
+
+- the system plugin directory (`~/.config/amp/plugins` on macOS/Linux, `%USERPROFILE%\.config\amp\plugins` on Windows), and
+- the project plugin directory (`.amp/plugins` under the session's working directory).
+
+Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory. Plugin modes are passed through as-is to the Amp CLI (`--mode <key>`) or the Amp SDK; Amp rejects keys that do not match a loaded plugin.
 
 ## MCP Configuration Passthrough
 

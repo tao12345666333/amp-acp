@@ -40,6 +40,7 @@ import {
   type AmpThreadMapping,
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
+import { discoverPluginModes as discoverPluginModesFromDir, type PluginAgentMode } from './plugin-modes.js';
 import { toAcpNotifications } from './to-acp.js';
 import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
@@ -78,12 +79,39 @@ const AMP_MODELS = [
   },
 ] as const;
 
-type AmpModelId = typeof AMP_MODELS[number]['modelId'];
 type PermissionMode = typeof PERMISSION_MODES[number];
 type Executor = typeof EXECUTORS[number];
 
-function isAmpModelId(modelId: string): modelId is AmpModelId {
-  return AMP_MODELS.some((model) => model.modelId === modelId);
+interface AmpModel {
+  modelId: string;
+  name: string;
+  description: string;
+}
+
+/**
+ * Combine built-in Amp modes with agent modes registered by locally installed
+ * Amp plugins (discovered from `// @amp-agent-mode` comments in plugin files).
+ * Built-in modes win on key conflicts; plugins are required not to collide
+ * with them, so this is defensive only.
+ */
+function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
+  const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId));
+  return [
+    ...AMP_MODELS,
+    ...pluginModes
+      .filter((mode) => !builtinIds.has(mode.modelId))
+      .map((mode) => ({
+        modelId: mode.modelId,
+        name: mode.name,
+        description: mode.source
+          ? `Custom agent mode registered by the ${mode.source} plugin.`
+          : 'Custom agent mode registered by an installed Amp plugin.',
+      })),
+  ];
+}
+
+function isAmpModelId(modelId: string, models: AmpModel[]): boolean {
+  return models.some((model) => model.modelId === modelId);
 }
 
 function isPermissionMode(mode: string): mode is PermissionMode {
@@ -94,7 +122,7 @@ function isExecutor(executor: string): executor is Executor {
   return EXECUTORS.some((candidate) => candidate === executor);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'executor'>): SessionConfigOption[] {
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor'>): SessionConfigOption[] {
   return [
     {
       type: 'select',
@@ -144,7 +172,7 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'exe
       description: 'Select the Amp execution mode.',
       category: 'model',
       currentValue: s.model,
-      options: AMP_MODELS.map((model) => ({
+      options: s.models.map((model) => ({
         value: model.modelId,
         name: model.name,
         description: model.description,
@@ -159,7 +187,8 @@ interface SessionState {
   cancelled: boolean;
   active: boolean;
   mode: PermissionMode;
-  model: AmpModelId;
+  model: string;
+  models: AmpModel[];
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
@@ -187,6 +216,8 @@ interface AmpAcpAgentOptions {
   orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
   replayRetry?: { attempts: number; delayMs: number };
+  /** Override plugin-mode discovery; tests pass a stub to isolate from local plugins. */
+  discoverPluginModes?: (cwd: string) => PluginAgentMode[];
 }
 
 export class AmpAcpAgent implements Agent {
@@ -200,6 +231,7 @@ export class AmpAcpAgent implements Agent {
 
   private exportThread: ThreadHistoryExporter;
   private replayRetry: { attempts: number; delayMs: number };
+  private discoverPluginModes: (cwd: string) => PluginAgentMode[];
 
   constructor(
     client: AgentSideConnection,
@@ -213,6 +245,7 @@ export class AmpAcpAgent implements Agent {
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
+    this.discoverPluginModes = options.discoverPluginModes ?? discoverPluginModesFromDir;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -261,6 +294,7 @@ export class AmpAcpAgent implements Agent {
     const sessionId = `S-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
     const mcpConfig = convertAcpMcpServersToAmpConfig(params.mcpServers);
+    const cwd = params.cwd || process.cwd();
 
     const session: SessionState = {
       threadId: null,
@@ -269,9 +303,10 @@ export class AmpAcpAgent implements Agent {
       active: false,
       mode: 'default',
       model: 'medium',
+      models: buildAmpModels(this.discoverPluginModes(cwd)),
       executor: 'local',
       mcpConfig,
-      cwd: params.cwd || process.cwd(),
+      cwd,
     };
     this.sessions.set(sessionId, session);
 
@@ -362,16 +397,19 @@ export class AmpAcpAgent implements Agent {
     mapping: AmpThreadMapping,
     params: ResumeSessionRequest | LoadSessionRequest,
   ): SessionState {
+    const cwd = params.cwd || mapping.cwd || process.cwd();
+    const models = buildAmpModels(this.discoverPluginModes(cwd));
     return {
       threadId: mapping.threadId,
       controller: null,
       cancelled: false,
       active: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
-      model: mapping.model && isAmpModelId(mapping.model) ? mapping.model : 'medium',
+      model: mapping.model && isAmpModelId(mapping.model, models) ? mapping.model : 'medium',
+      models,
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
-      cwd: params.cwd || mapping.cwd || process.cwd(),
+      cwd,
     };
   }
 
@@ -568,7 +606,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         s.mode = params.value;
         break;
       case CONFIG_AMP_MODE:
-        if (!isAmpModelId(params.value)) {
+        if (!isAmpModelId(params.value, s.models)) {
           throw new Error(`Unsupported Amp mode: ${params.value}`);
         }
         s.model = params.value;

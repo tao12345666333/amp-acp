@@ -41,6 +41,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     mappings.clear();
     delete process.env.AMP_ACP_CONTINUE_LATEST;
     delete process.env.AMP_ACP_ORB_PROJECT;
+    // Isolate from plugin modes installed on the developer machine.
     agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
       threadStore: {
         load: async (sessionId) => mappings.get(sessionId) ?? null,
@@ -48,6 +49,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
           mappings.set(mapping.sessionId, mapping);
         },
       },
+      discoverPluginModes: () => [],
     });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });

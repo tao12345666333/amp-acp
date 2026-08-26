@@ -48,6 +48,14 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true);
     expect(response.agentCapabilities?.mcpCapabilities?.http).toBe(true);
     expect(response.agentCapabilities?.mcpCapabilities?.sse).toBe(true);
+    expect(response.agentCapabilities?.sessionCapabilities?.resume).toEqual({});
+    expect(response.agentCapabilities?._meta?.['amp-acp/thread-lifecycle']).toEqual({
+      version: 1,
+      methods: {
+        nativeMetadata: 'amp-acp/session/native-metadata',
+        setArchived: 'amp-acp/thread/set-archived',
+      },
+    });
     expect(response.authMethods).toHaveLength(1);
     expect(response.authMethods![0].id).toBe('setup');
     expect(response.authMethods![0].name).toBe('Amp API Key Setup');
@@ -75,6 +83,14 @@ describe('ACP Protocol End-to-End', () => {
         { value: 'high', name: 'High' },
         { value: 'ultra', name: 'Ultra' },
       ],
+    });
+
+    expect(await agentConnection.extMethod('amp-acp/session/native-metadata', {
+      sessionId: response.sessionId,
+    })).toEqual({
+      version: 1,
+      sessionId: response.sessionId,
+      ampThreadId: null,
     });
   });
 

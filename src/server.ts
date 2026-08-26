@@ -8,6 +8,8 @@ import {
   type NewSessionResponse,
   type PromptRequest,
   type PromptResponse,
+  type ResumeSessionRequest,
+  type ResumeSessionResponse,
   type AuthenticateRequest,
   type AuthenticateResponse,
   type CancelNotification,
@@ -24,10 +26,14 @@ import {
 } from '@agentclientprotocol/sdk';
 import {
   createAmpTransport,
+  isAmpThreadId,
+  setAmpThreadArchived,
   type AmpExecutionOptions,
+  type AmpThreadLifecycleOptions,
   type AmpTransport,
 } from './amp-transport.js';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
+import { FileThreadMappingStore, type ThreadMappingStore } from './thread-mapping-store.js';
 import { toAcpNotifications } from './to-acp.js';
 import path from 'node:path';
 import packageJson from '../package.json';
@@ -36,6 +42,9 @@ const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
+const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
+const NATIVE_METADATA_METHOD = 'amp-acp/session/native-metadata';
+const SET_ARCHIVED_METHOD = 'amp-acp/thread/set-archived';
 
 const AMP_MODELS = [
   {
@@ -129,15 +138,34 @@ interface InitializeResponseWithAgentInfo extends InitializeResponse {
   };
 }
 
+type SetThreadArchived = (
+  threadId: string,
+  archived: boolean,
+  options?: AmpThreadLifecycleOptions,
+) => Promise<void>;
+
+interface AmpAcpAgentOptions {
+  threadStore?: ThreadMappingStore;
+  setThreadArchived?: SetThreadArchived;
+}
+
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
   private transport: AmpTransport;
+  private threadStore: ThreadMappingStore;
+  private setThreadArchived: SetThreadArchived;
   sessions = new Map<string, SessionState>();
   private clientCapabilities?: ClientCapabilities;
 
-  constructor(client: AgentSideConnection, transport = createAmpTransport()) {
+  constructor(
+    client: AgentSideConnection,
+    transport = createAmpTransport(),
+    options: AmpAcpAgentOptions = {},
+  ) {
     this.client = client;
     this.transport = transport;
+    this.threadStore = options.threadStore ?? new FileThreadMappingStore();
+    this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -153,6 +181,16 @@ export class AmpAcpAgent implements Agent {
       agentCapabilities: {
         promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: true },
+        sessionCapabilities: { resume: {} },
+        _meta: {
+          [THREAD_LIFECYCLE_CAPABILITY]: {
+            version: 1,
+            methods: {
+              nativeMetadata: NATIVE_METADATA_METHOD,
+              setArchived: SET_ARCHIVED_METHOD,
+            },
+          },
+        },
       },
       authMethods: [
         {
@@ -222,6 +260,25 @@ export class AmpAcpAgent implements Agent {
     throw RequestError.authRequired();
   }
 
+  async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
+    const mapping = await this.threadStore.load(params.sessionId);
+    if (!mapping) {
+      throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
+    }
+    const session: SessionState = {
+      threadId: mapping.threadId,
+      controller: null,
+      cancelled: false,
+      active: false,
+      mode: 'default',
+      model: 'medium',
+      mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
+      cwd: params.cwd,
+    };
+    this.sessions.set(params.sessionId, session);
+    return { configOptions: buildSessionConfigOptions(session) };
+  }
+
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
@@ -286,9 +343,21 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
     try {
       for await (const message of this.transport.execute({ prompt: textInput, options, signal: controller.signal })) {
-        if (!s.threadId && message.session_id) {
-          s.threadId = message.session_id;
-          console.error(`[amp] thread ${s.threadId}`);
+        if (message.session_id) {
+          if (!isAmpThreadId(message.session_id)) {
+            throw new Error(`Amp returned an invalid thread ID: ${message.session_id}`);
+          }
+          if (s.threadId && s.threadId !== message.session_id) {
+            throw new Error(`Amp changed thread ID from ${s.threadId} to ${message.session_id}`);
+          }
+          if (!s.threadId) {
+            await this.threadStore.save({
+              sessionId: params.sessionId,
+              threadId: message.session_id,
+            });
+            s.threadId = message.session_id;
+            console.error(`[amp] thread ${s.threadId}`);
+          }
         }
 
         if (message.type === 'assistant' || message.type === 'user') {
@@ -388,6 +457,61 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
     s.mode = params.modeId;
     return {};
+  }
+
+  async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    switch (method) {
+      case NATIVE_METADATA_METHOD:
+        return this.nativeMetadata(params);
+      case SET_ARCHIVED_METHOD:
+        return this.updateArchivedState(params);
+      default:
+        throw RequestError.methodNotFound(method);
+    }
+  }
+
+  private async nativeMetadata(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (typeof params.sessionId !== 'string') {
+      throw RequestError.invalidParams(undefined, 'sessionId must be a string');
+    }
+    const activeThreadId = this.sessions.get(params.sessionId)?.threadId ?? null;
+    const persisted = activeThreadId ? null : await this.threadStore.load(params.sessionId);
+    return {
+      version: 1,
+      sessionId: params.sessionId,
+      ampThreadId: activeThreadId ?? persisted?.threadId ?? null,
+    };
+  }
+
+  private async updateArchivedState(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (typeof params.sessionId !== 'string') {
+      throw RequestError.invalidParams(undefined, 'sessionId must be a string');
+    }
+    if (!isAmpThreadId(params.threadId)) {
+      throw RequestError.invalidParams(undefined, 'threadId must be a durable Amp T-... thread ID');
+    }
+    if (typeof params.archived !== 'boolean') {
+      throw RequestError.invalidParams(undefined, 'archived must be a boolean');
+    }
+
+    const active = this.sessions.get(params.sessionId);
+    const persisted = await this.threadStore.load(params.sessionId);
+    const mappedThreadId = active?.threadId ?? persisted?.threadId ?? null;
+    if (!mappedThreadId) {
+      throw RequestError.invalidParams(
+        undefined,
+        `No durable Amp thread mapping for ACP session ${params.sessionId}`,
+      );
+    }
+    if (mappedThreadId !== params.threadId) {
+      throw RequestError.invalidParams(
+        undefined,
+        `Amp thread ${params.threadId} does not match ACP session ${params.sessionId}`,
+      );
+    }
+
+    await this.setThreadArchived(params.threadId, params.archived);
+    return { version: 1, threadId: params.threadId, archived: params.archived };
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> { return this.client.readTextFile(params); }

@@ -25,7 +25,7 @@ let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;
 
 const continued = process.argv.includes('continue');
-console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-acp-e2e' }));
+console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-01a03c00-e608-7007-8181-5c1cc56757be' }));
 if (prompt === 'cancel me') await new Promise((resolve) => setTimeout(resolve, 30000));
 console.log(JSON.stringify({
   type: 'assistant',

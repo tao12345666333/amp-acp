@@ -89,10 +89,10 @@ interface AmpModel {
 }
 
 /**
- * Combine built-in Amp modes with agent modes registered by locally installed
- * Amp plugins (discovered from `// @amp-agent-mode` comments in plugin files).
- * Built-in modes win on key conflicts; plugins are required not to collide
- * with them, so this is defensive only.
+ * Combine built-in Amp modes with agent modes registered by Amp plugins
+ * (project, system, personal, and workspace). Built-in modes win on key
+ * conflicts; plugins are required not to collide with them, so this is
+ * defensive only.
  */
 function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
   const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId));

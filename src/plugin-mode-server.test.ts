@@ -35,6 +35,11 @@ const GROK45_PLUGIN = '// @amp-agent-mode {"key":"grok45","label":"Grok 4.5"}\ne
 
 describe('AmpAcpAgent with plugin agent modes', () => {
   const originalEnv = process.env.AMP_ACP_SYSTEM_PLUGIN_DIR;
+  const originalDisable = process.env.AMP_ACP_DISABLE_PLUGIN_LIST;
+
+  beforeEach(() => {
+    process.env.AMP_ACP_DISABLE_PLUGIN_LIST = '1';
+  });
 
   afterEach(() => {
     capturedCalls.length = 0;
@@ -42,6 +47,11 @@ describe('AmpAcpAgent with plugin agent modes', () => {
       delete process.env.AMP_ACP_SYSTEM_PLUGIN_DIR;
     } else {
       process.env.AMP_ACP_SYSTEM_PLUGIN_DIR = originalEnv;
+    }
+    if (originalDisable === undefined) {
+      delete process.env.AMP_ACP_DISABLE_PLUGIN_LIST;
+    } else {
+      process.env.AMP_ACP_DISABLE_PLUGIN_LIST = originalDisable;
     }
   });
 
@@ -120,5 +130,27 @@ describe('AmpAcpAgent with plugin agent modes', () => {
     } finally {
       rmSync(systemDir, { recursive: true, force: true });
     }
+  });
+
+  it('exposes Workspace plugin modes from amp plugins list', async () => {
+    const { discoverPluginModes } = await import('./plugin-modes.js');
+    const agent = new AmpAcpAgent(
+      mockClient,
+      createAmpTransport('sdk'),
+      (cwd) => discoverPluginModes(cwd, {
+        listPlugins: () => `✓ official-modes (Workspace Plugins) active
+  agent mode: grok45
+`,
+      }),
+    );
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const ampMode = session.configOptions.find((option) => option.id === 'amp-mode');
+    expect(ampMode?.options.map((option) => option.value)).toContain('grok45');
+    expect(ampMode?.options.find((option) => option.value === 'grok45')).toMatchObject({
+      value: 'grok45',
+      name: 'grok45',
+    });
   });
 });

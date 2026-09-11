@@ -88,7 +88,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Configure permissions (*Default* or *Bypass*) and the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by locally installed Amp plugins (such as `grok45` from `@amp/grok-45-mode`)
+- **Session configuration** — Configure permissions (*Default* or *Bypass*) and the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 
@@ -104,7 +104,7 @@ By default, amp-acp executes the installed Amp CLI directly through its streamin
 
 Amp plugins can register custom agent modes with `amp.registerAgentMode(...)` plus a matching `// @amp-agent-mode {"key":"...","label":"..."}` metadata comment in the plugin source (see [Amp's plugin docs](https://ampcode.com/manual#plugins)). Examples include `grok45` from `@amp/grok-45-mode` or any mode listed on the [Modes page](https://ampcode.com/modes) under *Agent Mode Plugins*.
 
-amp-acp auto-discovers these modes by scanning plugin sources and appends them to the Amp Mode selector in your ACP client, so a mode installed via `amp plugins add` shows up immediately — for example, with the Grok 4.5 plugin installed you get:
+amp-acp auto-discovers these modes and appends them to the Amp Mode selector in your ACP client. For example, with the Workspace `official-modes` plugin loaded you get:
 
 ```text
 Amp Mode  [Medium ▾]
@@ -115,12 +115,12 @@ Amp Mode  [Medium ▾]
   Grok 4.5
 ```
 
-Discovery covers:
+Discovery uses two sources, in Amp's plugin precedence order (project, then system, then personal/workspace):
 
-- the system plugin directory (`~/.config/amp/plugins` on macOS/Linux, `%USERPROFILE%\.config\amp\plugins` on Windows), and
-- the project plugin directory (`.amp/plugins` under the session's working directory).
+- `// @amp-agent-mode` comments in project plugins (`.amp/plugins` under the session cwd) and system plugins (`~/.config/amp/plugins` on macOS/Linux, `%USERPROFILE%\.config\amp\plugins` on Windows). These supply both the mode key and its label.
+- `amp plugins list`, which reports every plugin Amp actually loaded — including Personal and Workspace plugins that are not on the local filesystem. Mode keys from that listing that were not already found locally are appended (the CLI does not print labels, so the key is used as the display name).
 
-Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory. Plugin modes are passed through as-is to the Amp CLI (`--mode <key>`) or the Amp SDK; Amp rejects keys that do not match a loaded plugin.
+Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory. Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI listing (tests use this). Plugin modes are passed through as-is to the Amp CLI (`--mode <key>`) or the Amp SDK; Amp rejects keys that do not match a loaded plugin.
 
 ## MCP Configuration Passthrough
 

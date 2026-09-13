@@ -1,13 +1,16 @@
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
+import type { AmpThreadMapping } from './thread-mapping-store.js';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
+const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
+const mappings = new Map<string, AmpThreadMapping>();
 
 mock.module('@ampcode/sdk', () => ({
   execute: ({ options }: { options: Record<string, unknown> }) => {
     capturedCalls.push({ options });
     return (async function* () {
-      yield { type: 'system', subtype: 'init', session_id: 'T-test-thread-id' };
+      yield { type: 'system', subtype: 'init', session_id: threadId };
       yield { type: 'result', subtype: 'success', is_error: false };
     })();
   },
@@ -34,8 +37,16 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
   beforeEach(async () => {
     capturedCalls.length = 0;
+    mappings.clear();
     delete process.env.AMP_ACP_CONTINUE_LATEST;
-    agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'));
+    agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+      threadStore: {
+        load: async (sessionId) => mappings.get(sessionId) ?? null,
+        save: async (mapping) => {
+          mappings.set(mapping.sessionId, mapping);
+        },
+      },
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 
@@ -121,6 +132,6 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(2);
     expect(capturedCalls[0]!.options.continue).toBe(true);
-    expect(capturedCalls[1]!.options.continue).toBe('T-test-thread-id');
+    expect(capturedCalls[1]!.options.continue).toBe(threadId);
   });
 });

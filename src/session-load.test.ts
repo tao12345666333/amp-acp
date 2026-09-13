@@ -34,7 +34,10 @@ const mockClient = {
 const noHistory = async () => [];
 
 function createAgent(): InstanceType<typeof AmpAcpAgent> {
-  return new AmpAcpAgent(mockClient, createAmpTransport('sdk'), { exportThread: noHistory });
+  return new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+    exportThread: noHistory,
+    replayRetry: { attempts: 1, delayMs: 0 },
+  });
 }
 
 describe('AmpAcpAgent session/load', () => {

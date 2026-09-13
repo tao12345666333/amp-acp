@@ -41,7 +41,7 @@ import {
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
 import { toAcpNotifications } from './to-acp.js';
-import { exportThreadHistory, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
+import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
 import packageJson from '../package.json';
 
@@ -155,6 +155,8 @@ interface AmpAcpAgentOptions {
   threadStore?: ThreadMappingStore;
   setThreadArchived?: SetThreadArchived;
   exportThread?: ThreadHistoryExporter;
+  /** Retry policy for empty history exports on session/load; mainly for tests. */
+  replayRetry?: { attempts: number; delayMs: number };
 }
 
 export class AmpAcpAgent implements Agent {
@@ -166,6 +168,7 @@ export class AmpAcpAgent implements Agent {
   private clientCapabilities?: ClientCapabilities;
 
   private exportThread: ThreadHistoryExporter;
+  private replayRetry: { attempts: number; delayMs: number };
 
   constructor(
     client: AgentSideConnection,
@@ -177,6 +180,7 @@ export class AmpAcpAgent implements Agent {
     this.threadStore = options.threadStore ?? new FileThreadMappingStore();
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
+    this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -280,7 +284,13 @@ export class AmpAcpAgent implements Agent {
 
     if (session.threadId) {
       try {
-        const messages = await this.exportThread(session.threadId, session.cwd);
+        const messages = await exportThreadMessages(
+          this.exportThread,
+          session.threadId,
+          session.cwd,
+          this.replayRetry.attempts,
+          this.replayRetry.delayMs,
+        );
         for (const notification of historyToNotifications(messages, params.sessionId)) {
           await this.client.sessionUpdate(notification);
         }

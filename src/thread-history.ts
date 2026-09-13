@@ -42,6 +42,29 @@ export const exportThreadHistory: ThreadHistoryExporter = (threadId, cwd) => {
 };
 
 /**
+ * Export a thread's messages, retrying briefly when the export comes back
+ * empty. Fresh threads can take a few seconds to become visible to
+ * `amp threads export`, so an immediate replay after an adapter restart
+ * would otherwise come back empty even though the thread is intact.
+ */
+export async function exportThreadMessages(
+  exportThread: ThreadHistoryExporter,
+  threadId: string,
+  cwd: string,
+  attempts = 5,
+  delayMs = 2000,
+): Promise<ExportedThreadMessage[]> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const messages = await exportThread(threadId, cwd);
+    if (messages.length > 0) return messages;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return [];
+}
+
+/**
  * Convert exported thread messages into ACP session/update notifications.
  * Exported content blocks use the same shape as Amp's stream-JSON messages,
  * so the streaming mapper is reused as-is.

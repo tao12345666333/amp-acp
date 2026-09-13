@@ -137,7 +137,10 @@ describe('Binary integration tests', () => {
     expect(configOptions.map((option) => option.category)).toEqual(['mode', 'model']);
     const mode = configOptions.find((option) => option.id === 'amp-mode')!;
     expect(mode.currentValue).toBe('medium');
-    expect(mode.options?.map((option) => option.value)).toEqual(['low', 'medium', 'high', 'ultra']);
+    // Built-in modes always come first; agent modes registered by plugins
+    // installed on the machine running the test are appended after them.
+    const values = mode.options?.map((option) => option.value) ?? [];
+    expect(values.slice(0, 4)).toEqual(['low', 'medium', 'high', 'ultra']);
   });
 
   it('session/set_config_option updates Amp mode', async () => {
@@ -157,7 +160,8 @@ describe('Binary integration tests', () => {
     const configOptions = resp.result!.configOptions as Array<{ id: string; currentValue?: string; options?: Array<{ value: string }> }>;
     const mode = configOptions.find((option) => option.id === 'amp-mode')!;
     expect(mode.currentValue).toBe('low');
-    expect(mode.options?.map((option) => option.value)).toEqual(['low', 'medium', 'high', 'ultra']);
+    const values = mode.options?.map((option) => option.value) ?? [];
+    expect(values.slice(0, 4)).toEqual(['low', 'medium', 'high', 'ultra']);
   });
 
   it('session/new with MCP servers returns valid sessionId', async () => {

@@ -30,7 +30,8 @@ describe('ACP Protocol End-to-End', () => {
       ndJsonStream(clientToAgent.writable, agentToClient.readable),
     );
     new AgentSideConnection(
-      (client) => new AmpAcpAgent(client),
+      // Isolate from plugin modes installed on the developer machine.
+      (client) => new AmpAcpAgent(client, undefined, () => []),
       ndJsonStream(agentToClient.writable, clientToAgent.readable),
     );
   });

@@ -9,6 +9,12 @@ const ACP_SESSION_ID_PATTERN = /^S-[a-z0-9]+-[a-z0-9]{6}$/i;
 export interface AmpThreadMapping {
   sessionId: string;
   threadId: string;
+  /** Last selected ACP permission mode, if persisted. */
+  mode?: string;
+  /** Last selected Amp mode, if persisted. */
+  model?: string;
+  /** Working directory the session ran in, if persisted. */
+  cwd?: string;
 }
 
 export interface ThreadMappingStore {
@@ -33,10 +39,19 @@ function validateMapping(value: unknown, expectedSessionId: string): AmpThreadMa
   ) {
     throw new Error(`Invalid persisted mapping for ACP session ${expectedSessionId}`);
   }
-  return {
+  const result: AmpThreadMapping = {
     sessionId: expectedSessionId,
     threadId: mapping.threadId,
   };
+  for (const field of ['mode', 'model', 'cwd'] as const) {
+    const fieldValue = mapping[field];
+    if (fieldValue === undefined) continue;
+    if (typeof fieldValue !== 'string') {
+      throw new Error(`Invalid persisted mapping for ACP session ${expectedSessionId}`);
+    }
+    result[field] = fieldValue;
+  }
+  return result;
 }
 
 export function defaultAmpAcpStateDir(): string {

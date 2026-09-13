@@ -62,7 +62,7 @@ describe('AmpAcpAgent session/load', () => {
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
 
     await expect(
-      agent.loadSession({ sessionId: 'S-unknown', cwd: '/tmp', mcpServers: [] }),
+      agent.loadSession({ sessionId: 'S-unknown-000000', cwd: '/tmp', mcpServers: [] }),
     ).rejects.toThrow('Invalid params');
   });
 
@@ -208,35 +208,30 @@ describe('AmpAcpAgent session/load', () => {
     });
     expect(loaded.configOptions).toBeDefined();
   });
-});
 
-describe('session store', () => {
-  let stateDir: string;
+  it('restores persisted settings on session/resume too', async () => {
+    const first = createAgent();
+    await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
+    await first.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    await first.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'ultra',
+    });
 
-  beforeEach(() => {
-    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'amp-acp-state-'));
-    process.env.AMP_ACP_STATE_DIR = stateDir;
-  });
+    const second = createAgent();
+    await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const resumed = await second.resumeSession({
+      sessionId: session.sessionId,
+      cwd: '/tmp',
+      mcpServers: [],
+    });
 
-  afterEach(() => {
-    delete process.env.AMP_ACP_STATE_DIR;
-    fs.rmSync(stateDir, { recursive: true, force: true });
-  });
-
-  it('evicts the oldest entries beyond the cap', async () => {
-    const { rememberSession, recallSession } = await import('./session-store.js');
-    for (let i = 0; i < 205; i++) {
-      rememberSession(`S-${i}`, { threadId: `T-${i}`, mode: 'default', model: 'medium', cwd: '/tmp' });
-    }
-    expect(recallSession('S-0')).toBeNull();
-    expect(recallSession('S-204')?.threadId).toBe('T-204');
-  });
-
-  it('survives a corrupt store file', async () => {
-    const { rememberSession, recallSession } = await import('./session-store.js');
-    fs.writeFileSync(path.join(stateDir, 'sessions.json'), 'not json');
-    expect(recallSession('S-x')).toBeNull();
-    rememberSession('S-x', { threadId: 'T-x', mode: 'default', model: 'medium', cwd: '/tmp' });
-    expect(recallSession('S-x')?.threadId).toBe('T-x');
+    const byId = new Map(resumed.configOptions?.map((option) => [option.id, option]));
+    expect(byId.get('amp-mode')?.currentValue).toBe('ultra');
   });
 });

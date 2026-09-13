@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { FileThreadMappingStore } from './thread-mapping-store.js';
@@ -33,6 +33,37 @@ describe('FileThreadMappingStore', () => {
     const store = new FileThreadMappingStore(stateDir);
 
     expect(await store.load('S-legacy-abcdef')).toBeNull();
+  });
+
+  it('round-trips persisted session settings alongside the thread mapping', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId, mode: 'bypass', model: 'high', cwd: '/tmp/project' });
+
+    expect(await new FileThreadMappingStore(stateDir).load(sessionId)).toEqual({
+      sessionId,
+      threadId,
+      mode: 'bypass',
+      model: 'high',
+      cwd: '/tmp/project',
+    });
+  });
+
+  it('loads mappings written before settings were persisted', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId });
+
+    const loaded = await new FileThreadMappingStore(stateDir).load(sessionId);
+    expect(loaded).toEqual({ sessionId, threadId });
+    expect(loaded?.mode).toBeUndefined();
+  });
+
+  it('rejects settings fields with the wrong type', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId });
+    const mappingPath = path.join(stateDir, 'sessions', `${sessionId}.json`);
+    await writeFile(mappingPath, JSON.stringify({ sessionId, threadId, mode: 42 }));
+
+    await expect(store.load(sessionId)).rejects.toThrow('Invalid persisted mapping');
   });
 
   it('rejects invalid session and thread IDs instead of creating unsafe paths or mappings', async () => {

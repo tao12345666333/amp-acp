@@ -35,9 +35,12 @@ import {
   type AmpTransport,
 } from './amp-transport.js';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
-import { FileThreadMappingStore, type ThreadMappingStore } from './thread-mapping-store.js';
+import {
+  FileThreadMappingStore,
+  type AmpThreadMapping,
+  type ThreadMappingStore,
+} from './thread-mapping-store.js';
 import { toAcpNotifications } from './to-acp.js';
-import { rememberSession, recallSession } from './session-store.js';
 import { exportThreadHistory, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
 import packageJson from '../package.json';
@@ -266,22 +269,13 @@ export class AmpAcpAgent implements Agent {
     let session = this.sessions.get(params.sessionId);
 
     if (!session) {
-      const persisted = recallSession(params.sessionId);
-      if (!persisted) {
-        throw RequestError.invalidParams(`Unknown session: ${params.sessionId}`);
+      const mapping = await this.threadStore.load(params.sessionId);
+      if (!mapping) {
+        throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
       }
-      session = {
-        threadId: persisted.threadId,
-        controller: null,
-        cancelled: false,
-        active: false,
-        mode: isPermissionMode(persisted.mode) ? persisted.mode : 'default',
-        model: isAmpModelId(persisted.model) ? persisted.model : 'medium',
-        mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
-        cwd: params.cwd || persisted.cwd || process.cwd(),
-      };
+      session = this.sessionFromMapping(mapping, params);
       this.sessions.set(params.sessionId, session);
-      console.error(`[acp] loaded session ${params.sessionId} -> thread ${persisted.threadId}`);
+      console.error(`[acp] loaded session ${params.sessionId} -> thread ${mapping.threadId}`);
     }
 
     if (session.threadId) {
@@ -321,14 +315,40 @@ export class AmpAcpAgent implements Agent {
     };
   }
 
-  private persistSession(sessionId: string, s: SessionState): void {
+  private sessionFromMapping(
+    mapping: AmpThreadMapping,
+    params: ResumeSessionRequest | LoadSessionRequest,
+  ): SessionState {
+    return {
+      threadId: mapping.threadId,
+      controller: null,
+      cancelled: false,
+      active: false,
+      mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
+      model: mapping.model && isAmpModelId(mapping.model) ? mapping.model : 'medium',
+      mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
+      cwd: params.cwd || mapping.cwd || process.cwd(),
+    };
+  }
+
+  private async persistSession(sessionId: string, s: SessionState): Promise<void> {
     if (!s.threadId) return;
-    rememberSession(sessionId, {
+    await this.threadStore.save({
+      sessionId,
       threadId: s.threadId,
       mode: s.mode,
       model: s.model,
       cwd: s.cwd,
     });
+  }
+
+  /** Persist best-effort: a failed write must not reject a config change. */
+  private async persistSessionQuiet(sessionId: string, s: SessionState): Promise<void> {
+    try {
+      await this.persistSession(sessionId, s);
+    } catch (e) {
+      console.error('[acp] failed to persist session settings', e);
+    }
   }
 
   async authenticate(_params: AuthenticateRequest): Promise<AuthenticateResponse> {
@@ -343,16 +363,7 @@ export class AmpAcpAgent implements Agent {
     if (!mapping) {
       throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
     }
-    const session: SessionState = {
-      threadId: mapping.threadId,
-      controller: null,
-      cancelled: false,
-      active: false,
-      mode: 'default',
-      model: 'medium',
-      mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
-      cwd: params.cwd,
-    };
+    const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
     return { configOptions: buildSessionConfigOptions(session) };
   }
@@ -429,13 +440,9 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
             throw new Error(`Amp changed thread ID from ${s.threadId} to ${message.session_id}`);
           }
           if (!s.threadId) {
-            await this.threadStore.save({
-              sessionId: params.sessionId,
-              threadId: message.session_id,
-            });
             s.threadId = message.session_id;
+            await this.persistSession(params.sessionId, s);
             console.error(`[amp] thread ${s.threadId}`);
-            this.persistSession(params.sessionId, s);
           }
         }
 
@@ -512,7 +519,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
 
-    this.persistSession(params.sessionId, s);
+    await this.persistSessionQuiet(params.sessionId, s);
 
     const configOptions = buildSessionConfigOptions(s);
     try {
@@ -537,6 +544,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       throw new Error(`Unsupported mode: ${params.modeId}`);
     }
     s.mode = params.modeId;
+    await this.persistSessionQuiet(params.sessionId, s);
     return {};
   }
 

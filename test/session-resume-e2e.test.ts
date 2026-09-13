@@ -167,6 +167,7 @@ describe('durable session resume across adapter restarts', () => {
       threadId: string;
       mode?: string;
       model?: string;
+      executor?: string;
       cwd?: string;
     };
     expect(mapping).toEqual({
@@ -174,6 +175,7 @@ describe('durable session resume across adapter restarts', () => {
       threadId: THREAD_ID,
       mode: 'default',
       model: 'medium',
+      executor: 'local',
       cwd: fixtureDir,
     });
 

@@ -133,8 +133,15 @@ describe('Binary integration tests', () => {
     expect(resp.result!.modes).toBeUndefined();
     expect(resp.result!.models).toBeUndefined();
     const configOptions = resp.result!.configOptions as Array<{ id: string; category?: string; currentValue?: string; options?: Array<{ value: string }> }>;
-    expect(configOptions.map((option) => option.id)).toEqual(['permission', 'amp-mode']);
-    expect(configOptions.map((option) => option.category)).toEqual(['mode', 'model']);
+    expect(configOptions.map((option) => option.id)).toEqual([
+      'execution-environment',
+      'permission',
+      'amp-mode',
+    ]);
+    expect(configOptions.map((option) => option.category)).toEqual(['mode', 'mode', 'model']);
+    const executor = configOptions.find((option) => option.id === 'execution-environment')!;
+    expect(executor.currentValue).toBe('local');
+    expect(executor.options?.map((option) => option.value)).toEqual(['local', 'orb']);
     const mode = configOptions.find((option) => option.id === 'amp-mode')!;
     expect(mode.currentValue).toBe('medium');
     expect(mode.options?.map((option) => option.value)).toEqual(['low', 'medium', 'high', 'ultra']);

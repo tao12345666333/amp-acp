@@ -19,7 +19,7 @@ let fakeAmpPath: string;
 
 beforeAll(async () => {
   fixtureDir = await mkdtemp(path.join(os.tmpdir(), 'amp-acp-e2e-'));
-  fakeAmpPath = path.join(fixtureDir, 'amp');
+  fakeAmpPath = path.join(fixtureDir, 'amp.mjs');
   await writeFile(fakeAmpPath, `#!/usr/bin/env node
 let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;

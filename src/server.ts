@@ -48,7 +48,9 @@ import packageJson from '../package.json';
 const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
+const CONFIG_EXECUTOR = 'execution-environment';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
+const EXECUTORS = ['local', 'orb'] as const;
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
 const NATIVE_METADATA_METHOD = 'amp-acp/session/native-metadata';
 const SET_ARCHIVED_METHOD = 'amp-acp/thread/set-archived';
@@ -78,6 +80,7 @@ const AMP_MODELS = [
 
 type AmpModelId = typeof AMP_MODELS[number]['modelId'];
 type PermissionMode = typeof PERMISSION_MODES[number];
+type Executor = typeof EXECUTORS[number];
 
 function isAmpModelId(modelId: string): modelId is AmpModelId {
   return AMP_MODELS.some((model) => model.modelId === modelId);
@@ -87,8 +90,32 @@ function isPermissionMode(mode: string): mode is PermissionMode {
   return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model'>): SessionConfigOption[] {
+function isExecutor(executor: string): executor is Executor {
+  return EXECUTORS.some((candidate) => candidate === executor);
+}
+
+function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'executor'>): SessionConfigOption[] {
   return [
+    {
+      type: 'select',
+      id: CONFIG_EXECUTOR,
+      name: 'Execution Environment',
+      description: 'Choose whether Amp runs in the local project or a remote Amp Orb.',
+      category: 'mode',
+      currentValue: s.executor,
+      options: [
+        {
+          value: 'local',
+          name: 'Local',
+          description: 'Run Amp on this machine in the directory supplied by the ACP client.',
+        },
+        {
+          value: 'orb',
+          name: 'Orb',
+          description: 'Run Amp remotely. Project settings control permissions and MCP servers.',
+        },
+      ],
+    },
     {
       type: 'select',
       id: CONFIG_PERMISSION,
@@ -133,6 +160,7 @@ interface SessionState {
   active: boolean;
   mode: PermissionMode;
   model: AmpModelId;
+  executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
 }
@@ -155,6 +183,8 @@ interface AmpAcpAgentOptions {
   threadStore?: ThreadMappingStore;
   setThreadArchived?: SetThreadArchived;
   exportThread?: ThreadHistoryExporter;
+  /** Transport used for Orb execution; defaults to the Amp SDK transport. */
+  orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
   replayRetry?: { attempts: number; delayMs: number };
 }
@@ -162,6 +192,7 @@ interface AmpAcpAgentOptions {
 export class AmpAcpAgent implements Agent {
   private client: AgentSideConnection;
   private transport: AmpTransport;
+  private orbTransport: AmpTransport;
   private threadStore: ThreadMappingStore;
   private setThreadArchived: SetThreadArchived;
   sessions = new Map<string, SessionState>();
@@ -177,6 +208,7 @@ export class AmpAcpAgent implements Agent {
   ) {
     this.client = client;
     this.transport = transport;
+    this.orbTransport = options.orbTransport ?? createAmpTransport('sdk');
     this.threadStore = options.threadStore ?? new FileThreadMappingStore();
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
@@ -237,6 +269,7 @@ export class AmpAcpAgent implements Agent {
       active: false,
       mode: 'default',
       model: 'medium',
+      executor: 'local',
       mcpConfig,
       cwd: params.cwd || process.cwd(),
     };
@@ -336,6 +369,7 @@ export class AmpAcpAgent implements Agent {
       active: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
       model: mapping.model && isAmpModelId(mapping.model) ? mapping.model : 'medium',
+      executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd: params.cwd || mapping.cwd || process.cwd(),
     };
@@ -348,6 +382,7 @@ export class AmpAcpAgent implements Agent {
       threadId: s.threadId,
       mode: s.mode,
       model: s.model,
+      executor: s.executor,
       cwd: s.cwd,
     });
   }
@@ -420,14 +455,20 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
+      executor: s.executor,
     };
 
-    if (s.mode === 'bypass') {
-      options.dangerouslyAllowAll = true;
-    }
+    if (s.executor === 'orb') {
+      const project = process.env.AMP_ACP_ORB_PROJECT?.trim();
+      if (project) options.project = project;
+    } else {
+      if (s.mode === 'bypass') {
+        options.dangerouslyAllowAll = true;
+      }
 
-    if (Object.keys(s.mcpConfig).length > 0) {
-      options.mcpConfig = s.mcpConfig;
+      if (Object.keys(s.mcpConfig).length > 0) {
+        options.mcpConfig = s.mcpConfig;
+      }
     }
 
     if (s.threadId) {
@@ -441,7 +482,8 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     s.controller = controller;
 
     try {
-      for await (const message of this.transport.execute({ prompt: textInput, options, signal: controller.signal })) {
+      const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
+      for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         if (message.session_id) {
           if (!isAmpThreadId(message.session_id)) {
             throw new Error(`Amp returned an invalid thread ID: ${message.session_id}`);
@@ -513,6 +555,12 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
 
     switch (params.configId) {
+      case CONFIG_EXECUTOR:
+        if (!isExecutor(params.value)) {
+          throw new Error(`Unsupported execution environment: ${params.value}`);
+        }
+        s.executor = params.value;
+        break;
       case CONFIG_PERMISSION:
         if (!isPermissionMode(params.value)) {
           throw new Error(`Unsupported permission mode: ${params.value}`);

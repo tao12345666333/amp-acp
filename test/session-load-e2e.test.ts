@@ -177,6 +177,7 @@ describe('session/load across adapter restarts', () => {
       threadId: THREAD_ID,
       mode: 'default',
       model: 'high',
+      executor: 'local',
       cwd: fixtureDir,
     });
 

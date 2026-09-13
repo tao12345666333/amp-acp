@@ -13,6 +13,8 @@ export interface AmpThreadMapping {
   mode?: string;
   /** Last selected Amp mode, if persisted. */
   model?: string;
+  /** Last selected execution environment, if persisted. */
+  executor?: string;
   /** Working directory the session ran in, if persisted. */
   cwd?: string;
 }
@@ -43,7 +45,7 @@ function validateMapping(value: unknown, expectedSessionId: string): AmpThreadMa
     sessionId: expectedSessionId,
     threadId: mapping.threadId,
   };
-  for (const field of ['mode', 'model', 'cwd'] as const) {
+  for (const field of ['mode', 'model', 'executor', 'cwd'] as const) {
     const fieldValue = mapping[field];
     if (fieldValue === undefined) continue;
     if (typeof fieldValue !== 'string') {

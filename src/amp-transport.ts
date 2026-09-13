@@ -49,6 +49,62 @@ export interface AmpTransport {
   execute(request: AmpExecutionRequest): AsyncIterable<AmpStreamMessage>;
 }
 
+export interface AmpThreadLifecycleOptions {
+  command?: string;
+  commandArgs?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+const AMP_THREAD_ID_PATTERN = /^T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isAmpThreadId(value: unknown): value is string {
+  return typeof value === 'string' && AMP_THREAD_ID_PATTERN.test(value);
+}
+
+export function buildAmpArchiveArgs(threadId: string, archived: boolean): string[] {
+  if (!isAmpThreadId(threadId)) {
+    throw new Error(`Invalid Amp thread ID: ${threadId}`);
+  }
+  return archived
+    ? ['threads', 'archive', threadId]
+    : ['threads', 'archive', '--unarchive', threadId];
+}
+
+export async function setAmpThreadArchived(
+  threadId: string,
+  archived: boolean,
+  options: AmpThreadLifecycleOptions = {},
+): Promise<void> {
+  const command = options.command ?? process.env.AMP_CLI_PATH ?? 'amp';
+  const child = spawn(command, [
+    ...(options.commandArgs ?? []),
+    ...buildAmpArchiveArgs(threadId, archived),
+  ], {
+    cwd: options.cwd,
+    env: { ...process.env, ...options.env },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const stderr: Buffer[] = [];
+  child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+
+  const { code, processSignal } = await new Promise<{
+    code: number | null;
+    processSignal: NodeJS.Signals | null;
+  }>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, processSignal) => resolve({ code, processSignal }));
+  });
+
+  if (code === null) {
+    throw new Error(`Amp CLI process was killed by signal ${processSignal ?? 'unknown'}`);
+  }
+  if (code !== 0) {
+    const details = Buffer.concat(stderr).toString().trim();
+    throw new Error(`Amp CLI process exited with code ${code}${details ? `: ${details}` : ''}`);
+  }
+}
+
 const sdkTransport: AmpTransport = {
   name: 'sdk',
   execute(request) {

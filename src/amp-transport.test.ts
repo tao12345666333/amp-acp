@@ -3,10 +3,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  buildAmpArchiveArgs,
   buildAmpCliArgs,
   buildAmpSdkOptions,
   createAmpTransport,
   createCliTransport,
+  isAmpThreadId,
+  setAmpThreadArchived,
   type AmpExecutionOptions,
   type AmpStreamMessage,
 } from './amp-transport.js';
@@ -47,6 +50,68 @@ async function collect(stream: AsyncIterable<AmpStreamMessage>): Promise<AmpStre
 }
 
 describe('Amp transport', () => {
+  it('accepts only durable Amp thread IDs', () => {
+    expect(isAmpThreadId('T-01a03c00-e608-7007-8181-5c1cc56757be')).toBe(true);
+    expect(isAmpThreadId('S-01a03c00-e608-7007-8181-5c1cc56757be')).toBe(false);
+    expect(isAmpThreadId('T-test-thread')).toBe(false);
+    expect(isAmpThreadId('T-01a03c00-e608-7007-8181-5c1cc56757be; rm -rf /')).toBe(false);
+  });
+
+  it('builds exact archive and unarchive arguments', () => {
+    const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
+
+    expect(buildAmpArchiveArgs(threadId, true)).toEqual(['threads', 'archive', threadId]);
+    expect(buildAmpArchiveArgs(threadId, false)).toEqual(['threads', 'archive', '--unarchive', threadId]);
+    expect(() => buildAmpArchiveArgs('S-not-an-amp-thread', true)).toThrow('Invalid Amp thread ID');
+  });
+
+  it('archives and unarchives by invoking the configured Amp CLI directly', async () => {
+    const argsPath = path.join(fixtureDir, 'archive-args.json');
+    const lifecycleFixture = path.join(fixtureDir, 'fake-archive.mjs');
+    const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
+    await writeFile(lifecycleFixture, `
+import { writeFile } from 'node:fs/promises';
+await writeFile(process.env.ARGS_PATH, JSON.stringify(process.argv.slice(2)));
+`);
+
+    await setAmpThreadArchived(threadId, true, {
+      command: process.execPath,
+      commandArgs: [lifecycleFixture],
+      env: { ARGS_PATH: argsPath },
+    });
+    expect(JSON.parse(await Bun.file(argsPath).text())).toEqual([
+      'threads',
+      'archive',
+      threadId,
+    ]);
+
+    await setAmpThreadArchived(threadId, false, {
+      command: process.execPath,
+      commandArgs: [lifecycleFixture],
+      env: { ARGS_PATH: argsPath },
+    });
+    expect(JSON.parse(await Bun.file(argsPath).text())).toEqual([
+      'threads',
+      'archive',
+      '--unarchive',
+      threadId,
+    ]);
+  });
+
+  it('surfaces Amp CLI archive failures', async () => {
+    const lifecycleFixture = path.join(fixtureDir, 'failing-archive.mjs');
+    await writeFile(lifecycleFixture, `
+console.error('archive fixture failure');
+process.exit(3);
+`);
+
+    await expect(setAmpThreadArchived(
+      'T-01a03c00-e608-7007-8181-5c1cc56757be',
+      true,
+      { command: process.execPath, commandArgs: [lifecycleFixture] },
+    )).rejects.toThrow('Amp CLI process exited with code 3: archive fixture failure');
+  });
+
   it('uses the CLI transport by default', () => {
     const originalTransport = process.env.AMP_ACP_TRANSPORT;
     delete process.env.AMP_ACP_TRANSPORT;

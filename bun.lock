@@ -6,7 +6,7 @@
       "name": "amp-acp",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.4.0",
-        "@ampcode/sdk": "0.1.0-20260717152646-g22b5e58",
+        "@ampcode/sdk": "0.1.0-20260823161614-g3631dc6",
       },
       "devDependencies": {
         "@types/bun": "^1.2.5",
@@ -29,7 +29,7 @@
 
     "@ampcode/cli-win32-x64": ["@ampcode/cli-win32-x64@0.0.1784696449-g4b3fcd", "", { "os": "win32", "cpu": "x64" }, "sha512-HtOLdGrg3+7W6yqQcu7xsBfWHN5QvPmopkxbO5RulxnHA5G2doP9E1AD96q7FaolT82qhLsA806iJIFgB5zXNg=="],
 
-    "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20260717152646-g22b5e58", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-cUGASonVKf9zReLjW0uvf8zKrM2yZzgpPPfjUSf6+W1wcmgv/mjFvXvCvfzFZOVNYHqLdinrslL4wpt2HfrBcg=="],
+    "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20260823161614-g3631dc6", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-miWxp589g98hUMEl5tgsKgnz/UZsGDXBJq+8VEaBYqpBujF4fTA5Y+fZ8gQqVb5H5yRK2u82UHIrRZKwklrf4A=="],
 
     "@types/bun": ["@types/bun@1.3.8", "", { "dependencies": { "bun-types": "1.3.8" } }, "sha512-3LvWJ2q5GerAXYxO2mffLTqOzEu5qnhEAlh48Vnu8WQfnmSwbgagjGZV6BoHKJztENYEDn6QmVd949W4uESRJA=="],
 

@@ -1,4 +1,5 @@
 import { describe, it, beforeEach, expect } from 'bun:test';
+import { BUILTIN_AMP_MODES } from './amp-modes.js';
 import { AmpAcpAgent } from './server.js';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
@@ -16,7 +17,7 @@ describe('AmpAcpAgent MCP Integration', () => {
   let agent: AmpAcpAgent;
 
   beforeEach(async () => {
-    agent = new AmpAcpAgent(mockClient);
+    agent = new AmpAcpAgent(mockClient, undefined, { modeCatalog: async () => BUILTIN_AMP_MODES });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
 

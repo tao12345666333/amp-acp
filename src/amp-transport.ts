@@ -18,10 +18,17 @@ export type AmpMcpServerConfig =
 
 export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 
+/**
+ * Amp agent mode: one of the built-in modes (`low`, `medium`, `high`,
+ * `ultra`) or a plugin-provided custom agent mode, referenced by key or
+ * label (case-insensitive). Amp resolves the actual model routing.
+ */
+export type AmpMode = 'low' | 'medium' | 'high' | 'ultra' | (string & {});
+
 export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
-  mode?: 'low' | 'medium' | 'high' | 'ultra';
+  mode?: AmpMode;
   executor?: 'local' | 'orb';
   project?: string;
   dangerouslyAllowAll?: boolean;

@@ -44,6 +44,11 @@ const transcript = process.env.AMP_FAKE_TRANSCRIPT;
 const record = (prompt) =>
   fs.appendFileSync(process.env.AMP_FAKE_LOG, JSON.stringify({ argv, prompt }) + '\\n');
 
+// Mode discovery: simulate an Amp CLI with no plugin modes (no output, not recorded).
+if (argv[0] === 'plugins' && argv[1] === 'list') {
+  process.exit(0);
+}
+
 if (argv[0] === 'threads' && argv[1] === 'export') {
   record(null);
   const lines = fs.existsSync(transcript)

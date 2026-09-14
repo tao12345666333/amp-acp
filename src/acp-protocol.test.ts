@@ -1,8 +1,17 @@
 import { describe, it, beforeEach, expect } from 'bun:test';
 import { ClientSideConnection, AgentSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
+import { BUILTIN_AMP_MODES, type AmpModeCatalog } from './amp-modes.js';
 import { AmpAcpAgent } from './server.js';
 import { toAcpNotifications } from './to-acp.js';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
+
+const CUSTOM_MODE = {
+  value: 'acp-flash',
+  name: 'acp-flash',
+  description: 'Custom agent mode from an Amp plugin.',
+};
+
+const testModeCatalog: AmpModeCatalog = async () => [...BUILTIN_AMP_MODES, CUSTOM_MODE];
 
 class TestClient {
   notifications: SessionNotification[] = [];
@@ -30,7 +39,7 @@ describe('ACP Protocol End-to-End', () => {
       ndJsonStream(clientToAgent.writable, agentToClient.readable),
     );
     new AgentSideConnection(
-      (client) => new AmpAcpAgent(client),
+      (client) => new AmpAcpAgent(client, undefined, { modeCatalog: testModeCatalog }),
       ndJsonStream(agentToClient.writable, clientToAgent.readable),
     );
   });
@@ -93,6 +102,7 @@ describe('ACP Protocol End-to-End', () => {
         { value: 'medium', name: 'Medium' },
         { value: 'high', name: 'High' },
         { value: 'ultra', name: 'Ultra' },
+        { value: 'acp-flash', name: 'acp-flash' },
       ],
     });
 
@@ -140,7 +150,24 @@ describe('ACP Protocol End-to-End', () => {
     });
   });
 
-  it('should reject legacy Amp modes', async () => {
+  it('should accept a custom plugin agent mode', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'acp-flash',
+    });
+
+    expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
+      currentValue: 'acp-flash',
+    });
+  });
+
+  it('should reject an empty Amp mode', async () => {
     const session = await agentConnection.newSession({
       cwd: '/tmp',
       mcpServers: [],
@@ -149,7 +176,7 @@ describe('ACP Protocol End-to-End', () => {
     await expect(agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'amp-mode',
-      value: 'rush',
+      value: '   ',
     })).rejects.toThrow('Internal error');
   });
 

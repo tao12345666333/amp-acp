@@ -41,6 +41,7 @@ import {
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
 import { toAcpNotifications } from './to-acp.js';
+import { createAmpModeCatalog, type AmpModeCatalog, type AmpModeOption } from './amp-modes.js';
 import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
 import packageJson from '../package.json';
@@ -55,36 +56,8 @@ const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
 const NATIVE_METADATA_METHOD = 'amp-acp/session/native-metadata';
 const SET_ARCHIVED_METHOD = 'amp-acp/thread/set-archived';
 
-const AMP_MODELS = [
-  {
-    modelId: 'low',
-    name: 'Low',
-    description: 'Fast and economical for simple, well-defined tasks.',
-  },
-  {
-    modelId: 'medium',
-    name: 'Medium',
-    description: 'Balanced capability and cost for everyday coding tasks.',
-  },
-  {
-    modelId: 'high',
-    name: 'High',
-    description: 'Greater capability and reasoning for difficult tasks.',
-  },
-  {
-    modelId: 'ultra',
-    name: 'Ultra',
-    description: 'Maximum capability for the most demanding tasks.',
-  },
-] as const;
-
-type AmpModelId = typeof AMP_MODELS[number]['modelId'];
 type PermissionMode = typeof PERMISSION_MODES[number];
 type Executor = typeof EXECUTORS[number];
-
-function isAmpModelId(modelId: string): modelId is AmpModelId {
-  return AMP_MODELS.some((model) => model.modelId === modelId);
-}
 
 function isPermissionMode(mode: string): mode is PermissionMode {
   return PERMISSION_MODES.some((permissionMode) => permissionMode === mode);
@@ -94,7 +67,13 @@ function isExecutor(executor: string): executor is Executor {
   return EXECUTORS.some((candidate) => candidate === executor);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'executor'>): SessionConfigOption[] {
+function buildSessionConfigOptions(
+  s: Pick<SessionState, 'mode' | 'model' | 'executor'>,
+  ampModes: AmpModeOption[],
+): SessionConfigOption[] {
+  const ampModeOptions = ampModes.some((mode) => mode.value === s.model)
+    ? ampModes
+    : [...ampModes, { value: s.model, name: s.model, description: 'Custom Amp agent mode.' }];
   return [
     {
       type: 'select',
@@ -141,14 +120,10 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'exe
       type: 'select',
       id: CONFIG_AMP_MODE,
       name: 'Amp Mode',
-      description: 'Select the Amp execution mode.',
+      description: 'Select the Amp agent mode. Amp routes each mode to its models.',
       category: 'model',
       currentValue: s.model,
-      options: AMP_MODELS.map((model) => ({
-        value: model.modelId,
-        name: model.name,
-        description: model.description,
-      })),
+      options: ampModeOptions,
     },
   ];
 }
@@ -159,7 +134,8 @@ interface SessionState {
   cancelled: boolean;
   active: boolean;
   mode: PermissionMode;
-  model: AmpModelId;
+  /** Amp agent mode: a built-in mode or a plugin-provided custom mode key/label. */
+  model: string;
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
@@ -187,6 +163,8 @@ interface AmpAcpAgentOptions {
   orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
   replayRetry?: { attempts: number; delayMs: number };
+  /** Lists the selectable Amp modes for a session cwd; defaults to CLI-backed discovery of plugin agent modes. */
+  modeCatalog?: AmpModeCatalog;
 }
 
 export class AmpAcpAgent implements Agent {
@@ -197,6 +175,7 @@ export class AmpAcpAgent implements Agent {
   private setThreadArchived: SetThreadArchived;
   sessions = new Map<string, SessionState>();
   private clientCapabilities?: ClientCapabilities;
+  private modeCatalog: AmpModeCatalog;
 
   private exportThread: ThreadHistoryExporter;
   private replayRetry: { attempts: number; delayMs: number };
@@ -213,10 +192,17 @@ export class AmpAcpAgent implements Agent {
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
+    this.modeCatalog = options.modeCatalog ?? createAmpModeCatalog();
+  }
+
+  private async sessionConfigOptions(s: SessionState): Promise<SessionConfigOption[]> {
+    return buildSessionConfigOptions(s, await this.modeCatalog(s.cwd));
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
     this.clientCapabilities = request.clientCapabilities;
+    // Warm the mode catalog so the first session does not wait on discovery.
+    void Promise.resolve(this.modeCatalog(process.cwd())).catch(() => {});
     console.info(`[acp] amp-acp v${PACKAGE_VERSION} initialized`);
     return {
       protocolVersion: 1,
@@ -277,7 +263,7 @@ export class AmpAcpAgent implements Agent {
 
     const result: NewSessionResponse = {
       sessionId,
-      configOptions: buildSessionConfigOptions(session),
+      configOptions: await this.sessionConfigOptions(session),
     };
 
     setImmediate(async () => {
@@ -354,7 +340,7 @@ export class AmpAcpAgent implements Agent {
     });
 
     return {
-      configOptions: buildSessionConfigOptions(session),
+      configOptions: await this.sessionConfigOptions(session),
     };
   }
 
@@ -368,7 +354,7 @@ export class AmpAcpAgent implements Agent {
       cancelled: false,
       active: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
-      model: mapping.model && isAmpModelId(mapping.model) ? mapping.model : 'medium',
+      model: mapping.model?.trim() ? mapping.model : 'medium',
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd: params.cwd || mapping.cwd || process.cwd(),
@@ -410,7 +396,7 @@ export class AmpAcpAgent implements Agent {
     }
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
-    return { configOptions: buildSessionConfigOptions(session) };
+    return { configOptions: await this.sessionConfigOptions(session) };
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -567,19 +553,24 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
         s.mode = params.value;
         break;
-      case CONFIG_AMP_MODE:
-        if (!isAmpModelId(params.value)) {
-          throw new Error(`Unsupported Amp mode: ${params.value}`);
+      case CONFIG_AMP_MODE: {
+        // Amp accepts built-in modes and plugin-provided custom agent modes
+        // (by key or label, case-insensitive); it rejects unknown modes when
+        // the prompt runs, so any non-empty value is allowed here.
+        const mode = params.value.trim();
+        if (!mode) {
+          throw new Error('Amp mode must be a non-empty string');
         }
-        s.model = params.value;
+        s.model = mode;
         break;
+      }
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
 
     await this.persistSessionQuiet(params.sessionId, s);
 
-    const configOptions = buildSessionConfigOptions(s);
+    const configOptions = await this.sessionConfigOptions(s);
     try {
       await this.client.sessionUpdate({
         sessionId: params.sessionId,

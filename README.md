@@ -88,7 +88,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode (`low`, `medium`, `high`, or `ultra`) via ACP config options
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode (`low`, `medium`, `high`, `ultra`, or a custom agent mode registered by an Amp plugin) via ACP config options
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -131,7 +131,9 @@ During `session/load`, prior messages are replayed to the client as `session/upd
 
 ### Amp execution transport
 
-By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes.
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes as well as plugin-defined custom agent modes.
+
+The mode selector discovers custom agent modes (for example modes created with `amp.createAgent`/`amp.registerAgentMode`, which can pin a specific model and reasoning effort) by running `amp plugins list` in the session's working directory, so project plugins under `.amp/plugins/` are picked up per project. Discovery is cached briefly and fails safe: if the Amp CLI is unavailable, only the built-in modes are offered. Custom mode values are passed straight through to Amp (`amp --mode <key>`), which resolves the key case-insensitively against loaded plugins.
 
 ## MCP Configuration Passthrough
 
@@ -214,7 +216,7 @@ The regular suite uses a deterministic fake CLI and is safe for CI. Maintainers 
 AMP_ACP_LIVE_E2E=1 AMP_ACP_REAL_CLI_PATH="$(command -v amp)" bun run test:e2e:real
 ```
 
-This opt-in test is never enabled by CI. It creates a temporary workspace, runs two short prompts in `low` mode, verifies streaming and same-thread continuation through the official ACP client SDK, and consumes a small amount of Amp usage.
+This opt-in test is never enabled by CI. It creates a temporary workspace, runs two short prompts in `low` mode, and verifies streaming and same-thread continuation through the official ACP client SDK. A second test registers a plugin-defined custom agent mode (`acp-flash`, pinned to `zhipuai/glm-5.3-flash`), selects it through the ACP config options, prompts with it, and confirms via `amp threads usage --details` that the custom model served the request. Both consume a small amount of Amp usage, and the custom-mode test requires the pinned model to be usable by your Amp account.
 
 ## Troubleshooting
 

@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpExecutionRequest, AmpTransport } from './amp-transport.js';
+import { BUILTIN_AMP_MODES } from './amp-modes.js';
 import { AmpAcpAgent } from './server.js';
 import { FileThreadMappingStore } from './thread-mapping-store.js';
 
 const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
+const noPluginModes = async () => BUILTIN_AMP_MODES;
 
 const client = {
   sessionUpdate: async () => {},
@@ -46,7 +48,10 @@ describe('Amp ACP thread lifecycle extension', () => {
   it('exposes and persists the streamed Amp thread ID separately from the ACP session ID', async () => {
     const requests: AmpExecutionRequest[] = [];
     const store = new FileThreadMappingStore(stateDir);
-    const agent = new AmpAcpAgent(client, transportWithThread(requests), { threadStore: store });
+    const agent = new AmpAcpAgent(client, transportWithThread(requests), {
+      threadStore: store,
+      modeCatalog: noPluginModes,
+    });
     const initialized = await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({ cwd: '/tmp/project', mcpServers: [] });
 
@@ -80,7 +85,10 @@ describe('Amp ACP thread lifecycle extension', () => {
       threadId,
     });
     const requests: AmpExecutionRequest[] = [];
-    const restartedAgent = new AmpAcpAgent(client, transportWithThread(requests), { threadStore: store });
+    const restartedAgent = new AmpAcpAgent(client, transportWithThread(requests), {
+      threadStore: store,
+      modeCatalog: noPluginModes,
+    });
 
     await restartedAgent.resumeSession({
       sessionId: 'S-mrestart-abcdef',
@@ -103,6 +111,7 @@ describe('Amp ACP thread lifecycle extension', () => {
     const operations: Array<{ threadId: string; archived: boolean }> = [];
     const agent = new AmpAcpAgent(client, transportWithThread([]), {
       threadStore: store,
+      modeCatalog: noPluginModes,
       setThreadArchived: async (targetThreadId, archived) => {
         operations.push({ threadId: targetThreadId, archived });
       },
@@ -135,6 +144,7 @@ describe('Amp ACP thread lifecycle extension', () => {
     const operations: string[] = [];
     const agent = new AmpAcpAgent(client, transportWithThread([]), {
       threadStore: new FileThreadMappingStore(stateDir),
+      modeCatalog: noPluginModes,
       setThreadArchived: async (targetThreadId) => {
         operations.push(targetThreadId);
       },

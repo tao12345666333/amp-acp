@@ -16,10 +16,13 @@ mock.module('@ampcode/sdk', () => ({
   },
 }));
 
-const [{ AmpAcpAgent }, { createAmpTransport }] = await Promise.all([
+const [{ AmpAcpAgent }, { createAmpTransport }, { BUILTIN_AMP_MODES }] = await Promise.all([
   import('./server.js'),
   import('./amp-transport.js'),
+  import('./amp-modes.js'),
 ]);
+
+const noPluginModes = async () => BUILTIN_AMP_MODES;
 
 const mockClient = {
   sessionUpdate: async () => {},
@@ -42,6 +45,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     delete process.env.AMP_ACP_CONTINUE_LATEST;
     delete process.env.AMP_ACP_ORB_PROJECT;
     agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+      modeCatalog: noPluginModes,
       threadStore: {
         load: async (sessionId) => mappings.get(sessionId) ?? null,
         save: async (mapping) => {
@@ -121,7 +125,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         throw new Error('local transport should not execute an Orb prompt');
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      modeCatalog: noPluginModes,
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',
@@ -187,7 +194,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         yield { type: 'result', subtype: 'success', is_error: false };
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      modeCatalog: noPluginModes,
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',

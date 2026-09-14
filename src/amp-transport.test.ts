@@ -151,6 +151,20 @@ process.exit(3);
     }
   });
 
+  it('passes custom plugin agent modes through to the CLI and SDK', () => {
+    expect(buildAmpCliArgs({ ...baseOptions, mode: 'acp-flash' })).toEqual([
+      '--execute',
+      '--stream-json',
+      '--no-archive-after-execute',
+      '--mode',
+      'acp-flash',
+    ]);
+    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'acp-flash' })).toMatchObject({
+      mode: 'acp-flash',
+      noArchiveAfterExecute: true,
+    });
+  });
+
   it('passes Orb execution options through to the SDK', () => {
     expect(buildAmpSdkOptions({
       ...baseOptions,

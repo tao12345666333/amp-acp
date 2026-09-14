@@ -16,9 +16,10 @@ mock.module('@ampcode/sdk', () => ({
   },
 }));
 
-const [{ AmpAcpAgent }, { createAmpTransport }] = await Promise.all([
+const [{ AmpAcpAgent }, { createAmpTransport }, { BUILTIN_AMP_MODES }] = await Promise.all([
   import('./server.js'),
   import('./amp-transport.js'),
+  import('./amp-modes.js'),
 ]);
 
 const mockClient = {
@@ -32,11 +33,13 @@ const mockClient = {
 } as unknown as AgentSideConnection;
 
 const noHistory = async () => [];
+const noPluginModes = async () => BUILTIN_AMP_MODES;
 
 function createAgent(): InstanceType<typeof AmpAcpAgent> {
   return new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
     exportThread: noHistory,
     replayRetry: { attempts: 1, delayMs: 0 },
+    modeCatalog: noPluginModes,
   });
 }
 
@@ -175,12 +178,20 @@ describe('AmpAcpAgent session/load', () => {
       ];
     };
 
-    const second = new AmpAcpAgent(capturingClient, createAmpTransport('sdk'), { exportThread: fakeExport });
+    const second = new AmpAcpAgent(capturingClient, createAmpTransport('sdk'), {
+      exportThread: fakeExport,
+      modeCatalog: noPluginModes,
+    });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
     await second.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
 
     expect(exportedThreads).toEqual(['T-01234567-89ab-cdef-0123-456789abcdef']);
-    const kinds = (updates as { update: { sessionUpdate: string } }[]).map((u) => u.update.sessionUpdate);
+    const kinds = (updates as { update: { sessionUpdate: string } }[])
+      .map((u) => u.update.sessionUpdate)
+      // loadSession also emits available_commands_update; only the replayed
+      // history matters here, and its timing relative to that update is
+      // intentionally not fixed.
+      .filter((kind) => kind !== 'available_commands_update');
     expect(kinds).toEqual(['user_message_chunk', 'agent_thought_chunk', 'agent_message_chunk']);
     const texts = (updates as { update: { content?: { text?: string } } }[])
       .map((u) => u.update.content?.text)
@@ -200,7 +211,10 @@ describe('AmpAcpAgent session/load', () => {
     const failingExport = async () => {
       throw new Error('export unavailable');
     };
-    const second = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), { exportThread: failingExport });
+    const second = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+      exportThread: failingExport,
+      modeCatalog: noPluginModes,
+    });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const loaded = await second.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
     expect(loaded.configOptions).toBeDefined();

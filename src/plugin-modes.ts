@@ -33,8 +33,17 @@ export interface DiscoverPluginModesOptions {
 
 const PLUGIN_LIST_TIMEOUT_MS = 8000;
 
-/** Successful `amp plugins list` stdout, keyed by cwd + CLI path. */
-const pluginListCache = new Map<string, string>();
+/**
+ * How long a successful `amp plugins list` result is reused. Short enough
+ * that a mode plugin installed while the adapter is running shows up in new
+ * sessions within about a minute, without an adapter restart; long enough
+ * that `session/new` does not block the event loop on a ~1s spawn every
+ * time.
+ */
+export const PLUGIN_LIST_CACHE_TTL_MS = 60_000;
+
+/** Successful `amp plugins list` stdout with its expiry, keyed by cwd + CLI path. */
+const pluginListCache = new Map<string, { expires: number; stdout: string }>();
 
 /**
  * Parse `// @amp-agent-mode {...}` metadata comments out of a plugin source
@@ -155,9 +164,10 @@ export function parseAmpPluginsList(output: string): PluginAgentMode[] {
 
 /**
  * Run `amp plugins list` in `cwd` and return stdout, or null on any failure.
- * Successful output is cached per process for `(cwd, AMP_CLI_PATH)` so
- * `session/new` does not block the event loop on a ~1s spawn every time.
- * Failures are not cached, so a later session can retry.
+ * Successful output is cached per process for `(cwd, AMP_CLI_PATH)` and
+ * reused until it is PLUGIN_LIST_CACHE_TTL_MS old, so `session/new` does
+ * not block the event loop on a ~1s spawn every time. Failures are not
+ * cached, so a later session can retry.
  * Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI (used by tests).
  */
 export function readAmpPluginsList(cwd: string): string | null {
@@ -165,7 +175,7 @@ export function readAmpPluginsList(cwd: string): string | null {
   const command = process.env.AMP_CLI_PATH ?? 'amp';
   const cacheKey = `${cwd}\0${command}`;
   const cached = pluginListCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached && cached.expires > Date.now()) return cached.stdout;
   try {
     const result = spawnSync(command, ['plugins', 'list'], {
       cwd,
@@ -178,7 +188,7 @@ export function readAmpPluginsList(cwd: string): string | null {
     if (result.error || result.status !== 0) return null;
     const stdout = result.stdout;
     if (typeof stdout !== 'string') return null;
-    pluginListCache.set(cacheKey, stdout);
+    pluginListCache.set(cacheKey, { expires: Date.now() + PLUGIN_LIST_CACHE_TTL_MS, stdout });
     return stdout;
   } catch {
     return null;

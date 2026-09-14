@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
+import type { AmpThreadMapping } from './thread-mapping-store.js';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
 
@@ -119,7 +120,32 @@ describe('AmpAcpAgent with plugin agent modes', () => {
     ]);
   });
 
-  it('still rejects unknown modes', async () => {
+  it('passes an unknown but non-empty mode through to Amp', async () => {
+    const agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), { discoverPluginModes: () => [] });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const result = await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'some-future-mode',
+    });
+
+    // Amp is the authority on mode resolution, so unknown values are
+    // accepted here and stay visible in the selector.
+    const ampMode = result.configOptions.find((option) => option.id === 'amp-mode');
+    expect(ampMode?.currentValue).toBe('some-future-mode');
+    expect(ampMode?.options.map((option) => option.value)).toContain('some-future-mode');
+
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0]!.options.mode).toBe('some-future-mode');
+  });
+
+  it('rejects an empty Amp mode', async () => {
     const agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), { discoverPluginModes: () => [] });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
 
@@ -128,9 +154,36 @@ describe('AmpAcpAgent with plugin agent modes', () => {
       agent.setSessionConfigOption({
         sessionId: session.sessionId,
         configId: 'amp-mode',
-        value: 'not-a-mode',
+        value: '   ',
       }),
-    ).rejects.toThrow('Unsupported Amp mode: not-a-mode');
+    ).rejects.toThrow('Amp mode must be a non-empty string');
+  });
+
+  it('keeps the persisted mode on resume when its plugin is not discovered', async () => {
+    const mappings = new Map<string, AmpThreadMapping>();
+    const agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+      discoverPluginModes: () => [],
+      threadStore: {
+        load: async (sessionId) => mappings.get(sessionId) ?? null,
+        save: async (mapping) => {
+          mappings.set(mapping.sessionId, mapping);
+        },
+      },
+    });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    mappings.set('S-restore-custom', {
+      sessionId: 'S-restore-custom',
+      threadId: 'T-01234567-89ab-cdef-0123-456789abcdef',
+      mode: 'default',
+      model: 'acp-flash',
+      executor: 'local',
+      cwd: '/tmp',
+    });
+
+    const resumed = await agent.resumeSession({ sessionId: 'S-restore-custom', cwd: '/tmp', mcpServers: [] });
+    const ampMode = resumed.configOptions.find((option) => option.id === 'amp-mode');
+    expect(ampMode?.currentValue).toBe('acp-flash');
+    expect(ampMode?.options.map((option) => option.value)).toContain('acp-flash');
   });
 
   it('discovers plugin modes from the system plugin dir by default', async () => {

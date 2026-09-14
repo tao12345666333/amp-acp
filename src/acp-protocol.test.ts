@@ -141,7 +141,27 @@ describe('ACP Protocol End-to-End', () => {
     });
   });
 
-  it('should reject legacy Amp modes', async () => {
+  it('should accept a custom plugin agent mode', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    // The discovery stub lists no plugin modes, so 'acp-flash' is unknown to
+    // amp-acp; it still passes through because Amp is the authority on
+    // resolving mode keys.
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'acp-flash',
+    });
+
+    expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
+      currentValue: 'acp-flash',
+    });
+  });
+
+  it('should reject an empty Amp mode', async () => {
     const session = await agentConnection.newSession({
       cwd: '/tmp',
       mcpServers: [],
@@ -150,7 +170,7 @@ describe('ACP Protocol End-to-End', () => {
     await expect(agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'amp-mode',
-      value: 'rush',
+      value: '   ',
     })).rejects.toThrow('Internal error');
   });
 

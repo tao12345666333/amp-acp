@@ -95,11 +95,11 @@ interface AmpModel {
  * defensive only.
  */
 function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
-  const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId));
+  const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId.toLowerCase()));
   return [
     ...AMP_MODELS,
     ...pluginModes
-      .filter((mode) => !builtinIds.has(mode.modelId))
+      .filter((mode) => !builtinIds.has(mode.modelId.toLowerCase()))
       .map((mode) => ({
         modelId: mode.modelId,
         name: mode.name,

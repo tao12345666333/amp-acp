@@ -33,6 +33,9 @@ export interface DiscoverPluginModesOptions {
 
 const PLUGIN_LIST_TIMEOUT_MS = 8000;
 
+/** Successful `amp plugins list` stdout, keyed by cwd + CLI path. */
+const pluginListCache = new Map<string, string>();
+
 /**
  * Parse `// @amp-agent-mode {...}` metadata comments out of a plugin source
  * file. A single plugin file may register multiple modes. Malformed comments
@@ -141,8 +144,10 @@ export function parseAmpPluginsList(output: string): PluginAgentMode[] {
     }
     if (!active || !currentPlugin) continue;
     const mode = line.match(/^\s+agent mode:\s+(\S+)\s*$/);
-    if (!mode || seen.has(mode[1])) continue;
-    seen.add(mode[1]);
+    if (!mode) continue;
+    const key = mode[1].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     modes.push({ modelId: mode[1], name: mode[1], source: currentPlugin });
   }
   return modes;
@@ -150,11 +155,17 @@ export function parseAmpPluginsList(output: string): PluginAgentMode[] {
 
 /**
  * Run `amp plugins list` in `cwd` and return stdout, or null on any failure.
+ * Successful output is cached per process for `(cwd, AMP_CLI_PATH)` so
+ * `session/new` does not block the event loop on a ~1s spawn every time.
+ * Failures are not cached, so a later session can retry.
  * Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI (used by tests).
  */
 export function readAmpPluginsList(cwd: string): string | null {
   if (process.env.AMP_ACP_DISABLE_PLUGIN_LIST === '1') return null;
   const command = process.env.AMP_CLI_PATH ?? 'amp';
+  const cacheKey = `${cwd}\0${command}`;
+  const cached = pluginListCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   try {
     const result = spawnSync(command, ['plugins', 'list'], {
       cwd,
@@ -165,16 +176,25 @@ export function readAmpPluginsList(cwd: string): string | null {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (result.error || result.status !== 0) return null;
-    return result.stdout ?? null;
+    const stdout = result.stdout;
+    if (typeof stdout !== 'string') return null;
+    pluginListCache.set(cacheKey, stdout);
+    return stdout;
   } catch {
     return null;
   }
 }
 
+/** Drop cached `amp plugins list` output. Used by tests. */
+export function clearPluginListCache(): void {
+  pluginListCache.clear();
+}
+
 function addUnique(modes: PluginAgentMode[], seen: Set<string>, incoming: PluginAgentMode[]): void {
   for (const mode of incoming) {
-    if (seen.has(mode.modelId)) continue;
-    seen.add(mode.modelId);
+    const key = mode.modelId.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
     modes.push(mode);
   }
 }

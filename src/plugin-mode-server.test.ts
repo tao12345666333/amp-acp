@@ -101,6 +101,24 @@ describe('AmpAcpAgent with plugin agent modes', () => {
     expect(capturedCalls[0]!.options.mode).toBe('grok45');
   });
 
+  it('does not expose a plugin mode that collides with a built-in key case-insensitively', async () => {
+    const agent = new AmpAcpAgent(
+      mockClient,
+      createAmpTransport('sdk'),
+      () => [{ modelId: 'Low', name: 'Plugin Low', source: 'collision.ts' }],
+    );
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const ampMode = session.configOptions.find((option) => option.id === 'amp-mode');
+    expect(ampMode?.options.map((option) => option.value)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'ultra',
+    ]);
+  });
+
   it('still rejects unknown modes', async () => {
     const agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), { discoverPluginModes: () => [] });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });

@@ -123,7 +123,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         throw new Error('local transport should not execute an Orb prompt');
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      discoverPluginModes: () => [],
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',
@@ -189,7 +192,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         yield { type: 'result', subtype: 'success', is_error: false };
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      discoverPluginModes: () => [],
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',

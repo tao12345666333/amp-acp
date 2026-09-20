@@ -10,7 +10,7 @@ mock.module('@ampcode/sdk', () => ({
   execute: ({ options }: { options: Record<string, unknown> }) => {
     capturedCalls.push({ options });
     return (async function* () {
-      yield { type: 'system', subtype: 'init', session_id: 'T-test-thread-id' };
+      yield { type: 'system', subtype: 'init', session_id: 'T-01234567-89ab-cdef-0123-456789abcdef' };
       yield { type: 'result', subtype: 'success', is_error: false };
     })();
   },
@@ -105,7 +105,7 @@ describe('AmpAcpAgent with plugin agent modes', () => {
     const agent = new AmpAcpAgent(
       mockClient,
       createAmpTransport('sdk'),
-      () => [{ modelId: 'Low', name: 'Plugin Low', source: 'collision.ts' }],
+      { discoverPluginModes: () => [{ modelId: 'Low', name: 'Plugin Low', source: 'collision.ts' }] },
     );
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
 
@@ -155,11 +155,13 @@ describe('AmpAcpAgent with plugin agent modes', () => {
     const agent = new AmpAcpAgent(
       mockClient,
       createAmpTransport('sdk'),
-      (cwd) => discoverPluginModes(cwd, {
-        listPlugins: () => `✓ official-modes (Workspace Plugins) active
+      {
+        discoverPluginModes: (cwd) => discoverPluginModes(cwd, {
+          listPlugins: () => `✓ official-modes (Workspace Plugins) active
   agent mode: grok45
 `,
-      }),
+        }),
+      },
     );
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
 

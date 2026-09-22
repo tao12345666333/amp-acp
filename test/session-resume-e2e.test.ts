@@ -83,6 +83,7 @@ function spawnAdapter() {
       AMP_ACP_TRANSPORT: 'cli',
       AMP_CLI_PATH: fakeAmpPath,
       AMP_ACP_STATE_DIR: stateDir,
+      AMP_ACP_DISABLE_PLUGIN_LIST: '1',
       AMP_FAKE_LOG: fakeLogPath,
     },
     stdio: ['pipe', 'pipe', 'pipe'],

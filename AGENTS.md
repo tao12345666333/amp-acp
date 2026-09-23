@@ -16,6 +16,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/thread-mapping-store.ts` — Persists durable ACP-session-to-Amp-thread mappings for resume and lifecycle operations
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
+- `src/plugin-modes.ts` — Discovers agent modes from Amp plugins (`// @amp-agent-mode` comments in project/system plugin files, plus `amp plugins list` for Personal/Workspace plugins)
 - `src/utils.ts` — Node-to-Web stream converters
 
 ## Code Style

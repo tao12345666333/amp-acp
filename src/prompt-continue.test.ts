@@ -41,6 +41,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     mappings.clear();
     delete process.env.AMP_ACP_CONTINUE_LATEST;
     delete process.env.AMP_ACP_ORB_PROJECT;
+    // Isolate from plugin modes installed on the developer machine.
     agent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
       threadStore: {
         load: async (sessionId) => mappings.get(sessionId) ?? null,
@@ -48,6 +49,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
           mappings.set(mapping.sessionId, mapping);
         },
       },
+      discoverPluginModes: () => [],
     });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
@@ -121,7 +123,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         throw new Error('local transport should not execute an Orb prompt');
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      discoverPluginModes: () => [],
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',
@@ -187,7 +192,10 @@ describe('AmpAcpAgent prompt() continue option', () => {
         yield { type: 'result', subtype: 'success', is_error: false };
       },
     };
-    agent = new AmpAcpAgent(mockClient, localTransport, { orbTransport: createAmpTransport('sdk') });
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      orbTransport: createAmpTransport('sdk'),
+      discoverPluginModes: () => [],
+    });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
       cwd: '/tmp',

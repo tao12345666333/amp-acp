@@ -41,6 +41,7 @@ import {
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
 import { discoverPluginModes as discoverPluginModesFromDir, type PluginAgentMode } from './plugin-modes.js';
+import { TurnUsage } from './turn-usage.js';
 import { toAcpNotifications } from './to-acp.js';
 import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
@@ -518,10 +519,12 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
     const controller = new AbortController();
     s.controller = controller;
+    const turnUsage = new TurnUsage();
 
     try {
       const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
       for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
+        turnUsage.add(message);
         if (message.session_id) {
           if (!isAmpThreadId(message.session_id)) {
             throw new Error(`Amp returned an invalid thread ID: ${message.session_id}`);
@@ -558,7 +561,8 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
       }
 
-      return { stopReason: s.cancelled ? 'cancelled' : 'end_turn' };
+      const usage = turnUsage.toAcp();
+      return { stopReason: s.cancelled ? 'cancelled' : 'end_turn', ...(usage ? { usage } : {}) };
     } catch (err) {
       if (s.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };

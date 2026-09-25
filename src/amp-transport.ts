@@ -38,6 +38,8 @@ export interface AmpStreamMessage {
   subtype?: string;
   is_error?: boolean;
   error?: string;
+  /** Token usage, reported on `assistant` and `result` messages; shape is Amp's Claude Code-compatible usage object. */
+  usage?: unknown;
   message?: {
     content: unknown;
   };

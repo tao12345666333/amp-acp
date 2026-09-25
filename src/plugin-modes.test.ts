@@ -10,6 +10,7 @@ import {
   scanPluginDir,
   getSystemPluginDir,
   discoverPluginModes,
+  PLUGIN_LIST_CACHE_TTL_MS,
 } from './plugin-modes.js';
 
 const GROK45_SOURCE = `// @amp-agent-mode {"key":"grok45","label":"Grok 4.5"}
@@ -312,6 +313,61 @@ process.exit(1);
       expect(readAmpPluginsList(projectDir)).toContain('grok45');
       expect(readFileSync(counterPath, 'utf8')).toBe('1');
     } finally {
+      if (originalCli === undefined) {
+        delete process.env.AMP_CLI_PATH;
+      } else {
+        process.env.AMP_CLI_PATH = originalCli;
+      }
+      clearPluginListCache();
+      rmSync(binDir, { recursive: true, force: true });
+    }
+  });
+
+  it('expires the cached amp plugins list after the TTL', () => {
+    const binDir = mkdtempSync(path.join(os.tmpdir(), 'amp-acp-cli-cache-'));
+    const ampPath = path.join(binDir, 'amp');
+    const counterPath = path.join(binDir, 'count');
+    writeFileSync(counterPath, '0');
+    writeFileSync(
+      ampPath,
+      `#!${process.execPath}
+import { readFileSync, writeFileSync } from 'node:fs';
+const counterPath = ${JSON.stringify(counterPath)};
+if (process.argv[2] === 'plugins' && process.argv[3] === 'list') {
+  const n = Number(readFileSync(counterPath, 'utf8')) + 1;
+  writeFileSync(counterPath, String(n));
+  process.stdout.write('✓ official-modes (Workspace Plugins) active\\n  agent mode: grok45\\n');
+  process.exit(0);
+}
+process.exit(1);
+`,
+    );
+    chmodSync(ampPath, 0o755);
+
+    const originalCli = process.env.AMP_CLI_PATH;
+    const originalNow = Date.now;
+    delete process.env.AMP_ACP_DISABLE_PLUGIN_LIST;
+    process.env.AMP_CLI_PATH = ampPath;
+    clearPluginListCache();
+    let now = originalNow();
+    Date.now = () => now;
+    try {
+      expect(readAmpPluginsList(projectDir)).toContain('grok45');
+      expect(readAmpPluginsList(projectDir)).toContain('grok45');
+      expect(readFileSync(counterPath, 'utf8')).toBe('1');
+
+      // Just before expiry the cached output is still reused…
+      now += PLUGIN_LIST_CACHE_TTL_MS - 1;
+      expect(readAmpPluginsList(projectDir)).toContain('grok45');
+      expect(readFileSync(counterPath, 'utf8')).toBe('1');
+
+      // …and past expiry the CLI is queried again, so a mode plugin
+      // installed while the adapter runs shows up without a restart.
+      now += 2;
+      expect(readAmpPluginsList(projectDir)).toContain('grok45');
+      expect(readFileSync(counterPath, 'utf8')).toBe('2');
+    } finally {
+      Date.now = originalNow;
       if (originalCli === undefined) {
         delete process.env.AMP_CLI_PATH;
       } else {

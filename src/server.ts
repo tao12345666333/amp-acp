@@ -124,6 +124,17 @@ function isExecutor(executor: string): executor is Executor {
 }
 
 function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor'>): SessionConfigOption[] {
+  const ampModeOptions = s.models.map((model) => ({
+    value: model.modelId,
+    name: model.name,
+    description: model.description,
+  }));
+  if (!isAmpModelId(s.model, s.models)) {
+    // Keep a persisted or passed-through custom mode selectable even when it
+    // is not in the discovered list (e.g. its plugin is temporarily
+    // unloaded), so the session does not silently fall back to another mode.
+    ampModeOptions.push({ value: s.model, name: s.model, description: 'Custom Amp agent mode.' });
+  }
   return [
     {
       type: 'select',
@@ -173,11 +184,7 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'mod
       description: 'Select the Amp execution mode.',
       category: 'model',
       currentValue: s.model,
-      options: s.models.map((model) => ({
-        value: model.modelId,
-        name: model.name,
-        description: model.description,
-      })),
+      options: ampModeOptions,
     },
   ];
 }
@@ -406,7 +413,10 @@ export class AmpAcpAgent implements Agent {
       cancelled: false,
       active: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
-      model: mapping.model && isAmpModelId(mapping.model, models) ? mapping.model : 'medium',
+      // Keep the persisted Amp mode even when discovery does not currently
+      // list it (e.g. its plugin is temporarily unloaded); Amp is the
+      // authority on resolving or rejecting it when the prompt runs.
+      model: mapping.model?.trim() ? mapping.model : 'medium',
       models,
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
@@ -609,12 +619,19 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
         s.mode = params.value;
         break;
-      case CONFIG_AMP_MODE:
-        if (!isAmpModelId(params.value, s.models)) {
-          throw new Error(`Unsupported Amp mode: ${params.value}`);
+      case CONFIG_AMP_MODE: {
+        // Amp accepts built-in modes and plugin-provided custom agent modes
+        // by key (case-insensitive). Discovery can lag Amp — a mode plugin
+        // installed after the last discovery is valid before amp-acp lists
+        // it — so any non-empty value passes through to Amp, which is the
+        // authority and rejects unknown modes when the prompt runs.
+        const mode = params.value.trim();
+        if (!mode) {
+          throw new Error('Amp mode must be a non-empty string');
         }
-        s.model = params.value;
+        s.model = mode;
         break;
+      }
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Amp orb setup for amp-acp. Idempotent; safe to re-run on a warm filesystem.
+set -euo pipefail
+
+echo '==> bun install'
+time bun install --frozen-lockfile
+
+# Live e2e prerequisites report (never print credential material, presence only).
+echo '==> live e2e prerequisites'
+if command -v amp >/dev/null 2>&1; then
+  echo "    amp CLI: $(amp --version 2>/dev/null || echo 'found')"
+else
+  echo '    amp CLI: MISSING (install Amp before `bun run test:e2e:live`)'
+fi
+if [ -n "${AMP_API_KEY:-}" ]; then
+  echo '    Amp auth: AMP_API_KEY present'
+else
+  echo '    Amp auth: AMP_API_KEY not set (run `amp login` before live e2e)'
+fi

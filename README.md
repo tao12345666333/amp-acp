@@ -235,13 +235,15 @@ bun run test:binary  # Run binary integration and ACP client E2E tests
 bun run test:all     # Run all tests
 ```
 
-The regular suite uses a deterministic fake CLI and is safe for CI. Maintainers can additionally verify the complete path against their installed, authenticated Amp CLI:
+The regular suite uses a deterministic fake CLI and is safe for CI. Maintainers can additionally run the full-stack verification with one command against their installed, authenticated Amp CLI:
 
 ```bash
-AMP_ACP_LIVE_E2E=1 AMP_ACP_REAL_CLI_PATH="$(command -v amp)" bun run test:e2e:real
+bun run test:e2e:live
 ```
 
-This opt-in test is never enabled by CI. It creates a temporary workspace, runs two short prompts in `low` mode, and verifies streaming and same-thread continuation through the official ACP client SDK. A second test registers a plugin-defined custom agent mode (`acp-flash`, pinned to `zhipuai/glm-5.3-flash`), selects it through the ACP config options, prompts with it, and confirms via `amp threads usage --details` that the custom model served the request. Both consume a small amount of Amp usage, and the custom-mode test requires the pinned model to be usable by your Amp account.
+This opt-in command is never enabled by CI. It runs the binary integration and fake-CLI e2e suite plus two live layers: the real Amp CLI layer creates a temporary workspace, runs two short prompts in `low` mode, and verifies streaming and same-thread continuation through the official ACP client SDK, then registers a plugin-defined custom agent mode (`acp-flash`, pinned to `zhipuai/glm-5.3-flash`), selects it through the ACP config options, prompts with it, and confirms via `amp threads usage --details` that the custom model served the request; the orb layer runs a turn in a remote Amp orb through the `execution-environment` config option. All of it consumes a small amount of Amp usage: the custom-mode test requires the pinned model to be usable by your Amp account, and the orb test requires orb access to the repository's Amp project (inferred from the git `origin` remote).
+
+Everything also runs inside an Amp orb out of the box — orbs ship the Amp CLI and authentication, and the repository's `.agents/setup` installs the dependencies — so maintainers can ask an Amp thread to run `bun run test:e2e:live` instead of testing with a local editor.
 
 ## Troubleshooting
 

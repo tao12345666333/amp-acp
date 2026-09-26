@@ -63,8 +63,14 @@ function sendAndWait(
 
 describe('Binary integration tests', () => {
   beforeAll(() => {
+    // Scrub ambient Amp credentials: these protocol tests exercise the
+    // unauthenticated paths, so the binary must not inherit a developer's or
+    // an orb's AMP_API_KEY.
+    const childEnv = { ...process.env };
+    delete childEnv.AMP_API_KEY;
     proc = spawn(BINARY_PATH, [], {
       stdio: ['pipe', 'pipe', 'ignore'],
+      env: childEnv,
     });
 
     proc.stdout!.on('data', (chunk: Buffer) => {

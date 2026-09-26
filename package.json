@@ -25,6 +25,7 @@
     "test:binary": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/",
     "test:e2e:real": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/acp-real-cli-e2e.test.ts",
     "test:e2e:orb": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && bun test test/acp-orb-e2e.test.ts",
+    "test:e2e:live": "bun build src/index.ts --target=node --outdir=dist --entry-naming=[dir]/[name].js && bun build dist/index.js --compile --outfile dist/amp-acp-test && AMP_ACP_LIVE_E2E=1 AMP_ACP_ORB_LIVE_E2E=1 bun test test/",
     "test:all": "bun run test && bun run test:binary"
   },
   "dependencies": {

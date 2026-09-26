@@ -5,6 +5,7 @@
 - `bun start` or `bun dist/index.js` — Run the ACP adapter
 - `bun run lint` — Type-check with `tsc --noEmit`
 - `bun test src/` — Run tests with Bun's built-in test runner
+- `bun run test:e2e:live` — Full-stack opt-in verification (binary + fake-CLI e2e + real Amp CLI + orb execution); needs an authenticated Amp CLI, consumes real Amp usage
 
 ## Architecture
 This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-compatible clients like Zed.

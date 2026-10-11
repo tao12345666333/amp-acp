@@ -36,31 +36,52 @@ describe('ACP Protocol End-to-End', () => {
     );
   });
 
-  it('should handle initialize request and return correct capabilities', async () => {
+  it.each([{}, { auth: { terminal: false } }, { terminal: true }])(
+    'should return correct capabilities and legacy auth for client capabilities %j',
+    async (clientCapabilities) => {
+      const response = await agentConnection.initialize({
+        protocolVersion: 1,
+        clientCapabilities,
+      });
+
+      expect(response.protocolVersion).toBe(1);
+      expect(response.agentInfo?.name).toBe('amp-acp');
+      expect(response.agentInfo?.version).toBeDefined();
+      expect(response.agentCapabilities?.promptCapabilities?.image).toBe(true);
+      expect(response.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true);
+      expect(response.agentCapabilities?.mcpCapabilities?.http).toBe(true);
+      expect(response.agentCapabilities?.mcpCapabilities?.sse).toBe(true);
+      expect(response.agentCapabilities?.sessionCapabilities?.resume).toEqual({});
+      expect(response.agentCapabilities?._meta?.['amp-acp/thread-lifecycle']).toEqual({
+        version: 1,
+        methods: {
+          nativeMetadata: 'amp-acp/session/native-metadata',
+          setArchived: 'amp-acp/thread/set-archived',
+        },
+      });
+      expect(response.authMethods).toHaveLength(1);
+      expect(response.authMethods![0].id).toBe('setup');
+      expect(response.authMethods![0].name).toBe('Amp API Key Setup');
+      expect(response.authMethods![0].type).toBeUndefined();
+      expect(response.authMethods![0]._meta?.['terminal-auth']?.command).toBeDefined();
+      expect(response.authMethods![0]._meta?.['terminal-auth']?.args).toEqual(['--setup']);
+      expect(response.authMethods![0]._meta?.['terminal-auth']?.label).toBe('Amp API Key Setup');
+    },
+  );
+
+  it('should advertise terminal auth when the client supports it', async () => {
     const response = await agentConnection.initialize({
       protocolVersion: 1,
-      clientCapabilities: {},
+      clientCapabilities: { auth: { terminal: true } },
     });
 
-    expect(response.protocolVersion).toBe(1);
-    expect(response.agentInfo?.name).toBe('amp-acp');
-    expect(response.agentInfo?.version).toBeDefined();
-    expect(response.agentCapabilities?.promptCapabilities?.image).toBe(true);
-    expect(response.agentCapabilities?.promptCapabilities?.embeddedContext).toBe(true);
-    expect(response.agentCapabilities?.mcpCapabilities?.http).toBe(true);
-    expect(response.agentCapabilities?.mcpCapabilities?.sse).toBe(true);
-    expect(response.agentCapabilities?.sessionCapabilities?.resume).toEqual({});
-    expect(response.agentCapabilities?._meta?.['amp-acp/thread-lifecycle']).toEqual({
-      version: 1,
-      methods: {
-        nativeMetadata: 'amp-acp/session/native-metadata',
-        setArchived: 'amp-acp/thread/set-archived',
-      },
-    });
-    expect(response.authMethods).toHaveLength(1);
-    expect(response.authMethods![0].id).toBe('setup');
-    expect(response.authMethods![0].name).toBe('Amp API Key Setup');
-    expect(response.authMethods![0]._meta?.['terminal-auth']?.label).toBe('Amp API Key Setup');
+    expect(response.authMethods).toEqual([{
+      id: 'setup',
+      type: 'terminal',
+      name: 'Amp API Key Setup',
+      description: 'Run interactive setup to configure your Amp API key',
+      args: ['--setup'],
+    }]);
   });
 
   it('should handle newSession and return a valid sessionId', async () => {

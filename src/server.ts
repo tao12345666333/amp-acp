@@ -286,13 +286,18 @@ export class AmpAcpAgent implements Agent {
           id: 'setup',
           name: 'Amp API Key Setup',
           description: 'Run interactive setup to configure your Amp API key',
-          _meta: {
-            'terminal-auth': {
-              command: getTerminalAuthCommand(),
-              args: ['--setup'],
-              label: 'Amp API Key Setup',
+          ...(request.clientCapabilities?.auth?.terminal === true ? {
+            type: 'terminal',
+            args: ['--setup'],
+          } : {
+            _meta: {
+              'terminal-auth': {
+                command: getTerminalAuthCommand(),
+                args: ['--setup'],
+                label: 'Amp API Key Setup',
+              },
             },
-          },
+          }),
         },
       ],
     };

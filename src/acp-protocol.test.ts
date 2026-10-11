@@ -3,6 +3,7 @@ import { ClientSideConnection, AgentSideConnection, ndJsonStream } from '@agentc
 import { AmpAcpAgent } from './server.js';
 import { toAcpNotifications } from './to-acp.js';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { AmpExecutionRequest, AmpTransport } from './amp-transport.js';
 
 class TestClient {
   notifications: SessionNotification[] = [];
@@ -19,8 +20,17 @@ describe('ACP Protocol End-to-End', () => {
   let agentToClient: TransformStream;
   let agentConnection: ClientSideConnection;
   let testClient: TestClient;
+  let prompts: AmpExecutionRequest[];
 
   beforeEach(() => {
+    prompts = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute(request) {
+        prompts.push(request);
+        yield { type: 'result', is_error: false };
+      },
+    };
     clientToAgent = new TransformStream();
     agentToClient = new TransformStream();
     testClient = new TestClient();
@@ -31,7 +41,7 @@ describe('ACP Protocol End-to-End', () => {
     );
     new AgentSideConnection(
       // Isolate from plugin modes installed on the developer machine.
-      (client) => new AmpAcpAgent(client, undefined, { discoverPluginModes: () => [] }),
+      (client) => new AmpAcpAgent(client, transport, { orbTransport: transport, discoverPluginModes: () => [] }),
       ndJsonStream(agentToClient.writable, clientToAgent.readable),
     );
   });
@@ -82,6 +92,65 @@ describe('ACP Protocol End-to-End', () => {
       description: 'Run interactive setup to configure your Amp API key',
       args: ['--setup'],
     }]);
+  });
+
+  it('forwards interleaved text and multiple images for local and Orb turns', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+    for (const executor of ['local', 'orb']) {
+      await agentConnection.setSessionConfigOption({ sessionId: session.sessionId, configId: 'execution-environment', value: executor });
+      await agentConnection.prompt({
+        sessionId: session.sessionId,
+        prompt: [
+          { type: 'text', text: 'first' },
+          { type: 'image', mimeType: 'image/png', data: 'AQID' },
+          { type: 'text', text: 'second' },
+          { type: 'image', mimeType: 'image/jpeg', data: 'BAU=' },
+          { type: 'text', text: 'last' },
+        ],
+      });
+      expect(prompts.at(-1)).toMatchObject({
+        prompt: 'firstsecondlast',
+        options: { executor },
+        content: [
+          { type: 'text', text: 'first' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+          { type: 'text', text: 'second' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BAU=' } },
+          { type: 'text', text: 'last' },
+        ],
+      });
+    }
+  });
+
+  it('forwards image-only prompts', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agentConnection.prompt({ sessionId: session.sessionId, prompt: [{ type: 'image', mimeType: 'image/webp', data: 'AQID' }] });
+    expect(prompts[0]).toMatchObject({ prompt: '', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/webp', data: 'AQID' } }] });
+  });
+
+  it('accepts unpadded and whitespace-wrapped base64 image data', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agentConnection.prompt({ sessionId: session.sessionId, prompt: [{ type: 'image', mimeType: 'image/png', data: 'AQI' }] });
+    await agentConnection.prompt({ sessionId: session.sessionId, prompt: [{ type: 'image', mimeType: 'image/png', data: 'AQ\nID' }] });
+    expect(prompts.map((p) => p.content?.[0])).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQI' } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+    ]);
+  });
+
+  it('rejects unsupported or malformed images without starting a partial turn', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+    for (const image of [
+      { type: 'image' as const, mimeType: 'image/svg+xml', data: 'AQID' },
+      { type: 'image' as const, mimeType: 'image/png', data: 'not base64!' },
+      { type: 'image' as const, mimeType: 'image/png', data: '' },
+    ]) {
+      await expect(agentConnection.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'do not run without the image' }, image] })).rejects.toMatchObject({ code: -32602 });
+    }
+    expect(prompts).toHaveLength(0);
+    await agentConnection.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'retry' }] });
+    expect(prompts[0]?.prompt).toBe('retry');
+    expect(prompts[0]?.content).toBeUndefined();
   });
 
   it('should handle newSession and return a valid sessionId', async () => {

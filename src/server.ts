@@ -32,6 +32,7 @@ import {
   setAmpThreadArchived,
   type AmpEffort,
   type AmpExecutionOptions,
+  type AmpPromptContent,
   type AmpThreadLifecycleOptions,
   type AmpTransport,
 } from './amp-transport.js';
@@ -57,6 +58,15 @@ const CONFIG_REASONING_EFFORT = 'reasoning-effort';
 const MAX_QUEUED_PROMPTS = 32;
 const PERMISSION_MODES = ['default', 'bypass'] as const;
 const EXECUTORS = ['local', 'orb'] as const;
+
+function normalizeBase64ImageData(data: string): string | null {
+  const normalized = data.replace(/\s+/g, '');
+  if (!normalized || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
+  const unpadded = normalized.replace(/=+$/, '');
+  if (unpadded.length % 4 === 1) return null;
+  if (unpadded.length !== normalized.length && normalized.length % 4 !== 0) return null;
+  return normalized;
+}
 const REASONING_EFFORTS = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 type ReasoningEffort = typeof REASONING_EFFORTS[number];
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
@@ -572,7 +582,10 @@ export class AmpAcpAgent implements Agent {
     turn: ActiveTurn,
   ): Promise<PromptResponse> {
     let textInput = '';
+    let pendingText = '';
+    const content: AmpPromptContent[] = [];
     for (const chunk of params.prompt) {
+      const textStart = textInput.length;
       switch (chunk.type) {
         case 'text':
           if (chunk.text.trim() === '/init') {
@@ -597,15 +610,29 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           }
           break;
         case 'image':
+          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(chunk.mimeType)) {
+            throw RequestError.invalidParams(undefined, `Unsupported image MIME type: ${chunk.mimeType}. Use PNG, JPEG, GIF, or WebP.`);
+          }
+          const imageData = normalizeBase64ImageData(chunk.data);
+          if (!imageData) {
+            throw RequestError.invalidParams(undefined, 'Image data must be non-empty base64.');
+          }
+          if (pendingText) content.push({ type: 'text', text: pendingText });
+          pendingText = '';
+          content.push({ type: 'image', source: { type: 'base64', media_type: chunk.mimeType, data: imageData } });
           break;
         default:
           break;
       }
+      pendingText += textInput.slice(textStart);
     }
+    if (pendingText) content.push({ type: 'text', text: pendingText });
+    const hasImages = content.some((block) => block.type === 'image');
 
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
     const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
-    const effortSupported = transport.name === 'cli';
+    // Local image turns run through the CLI even on the SDK transport.
+    const effortSupported = transport.name === 'cli' || (hasImages && s.executor !== 'orb');
     if (effort && !effortSupported && !this.warnedUnsupportedEffort) {
       this.warnedUnsupportedEffort = true;
       console.error('[acp] reasoning effort is only supported by the CLI transport; ignoring it for this agent process');
@@ -642,7 +669,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     const turnUsage = new TurnUsage();
 
     try {
-      for await (const message of transport.execute({ prompt: textInput, options, signal: turn.controller.signal })) {
+      for await (const message of transport.execute({ prompt: textInput, ...(hasImages ? { content } : {}), options, signal: turn.controller.signal })) {
         turnUsage.add(message);
         if (message.session_id) {
           if (!isAmpThreadId(message.session_id)) {

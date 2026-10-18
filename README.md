@@ -88,7 +88,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, external agents such as Claude Code (`external-agent:claude-code`), plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -132,7 +132,13 @@ During `session/load`, prior messages are replayed to the client as `session/upd
 
 ### Amp execution transport
 
-By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes, plus any plugin agent modes (see below).
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes, external agents, and plugin agent modes (see below).
+
+### Claude Code (external agents)
+
+Amp can run Claude Code on your Claude Pro/Max plan as an external agent mode (see [Amp's docs](https://ampcode.com/docs/the-dial#use-your-claude-subscription)). amp-acp lists every active external agent reported by `amp config external-agents list --json` right after the built-in modes, so **Claude Code** appears in the Amp Mode selector. Selecting it runs the prompt with `--mode external-agent:claude-code`, the same as `amp -x --mode external-agent:claude-code`.
+
+Local sessions use the Claude Code login on your machine: install Claude Code 2.1.276 or later, run `claude` and `/login` with a Pro or Max plan, and keep `claude` on the `PATH` that amp-acp inherits. Orb sessions use the Claude subscription linked in Amp Settings → Model Routing. Amp CLIs without external agent support simply list none. The listing shares the 60-second cache and the `AMP_ACP_DISABLE_PLUGIN_LIST=1` switch described below.
 
 ### Plugin agent modes
 

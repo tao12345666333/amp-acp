@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- List Amp external agents, such as Claude Code (`external-agent:claude-code`), in the Amp Mode selector after the built-in modes. They are discovered from `amp config external-agents list --json` and run with `--mode <mode key>`, so Claude Code uses your Claude Pro/Max login (local) or linked subscription (Orb).
+
 ## 0.10.0 - 2026-10-09
 
 ### Added

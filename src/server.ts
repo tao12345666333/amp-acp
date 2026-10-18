@@ -41,6 +41,7 @@ import {
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
 import { discoverPluginModes as discoverPluginModesFromDir, type PluginAgentMode } from './plugin-modes.js';
+import { discoverExternalAgentModes } from './external-agents.js';
 import { TurnUsage } from './turn-usage.js';
 import { toAcpNotifications } from './to-acp.js';
 import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
@@ -90,10 +91,10 @@ interface AmpModel {
 }
 
 /**
- * Combine built-in Amp modes with agent modes registered by Amp plugins
- * (project, system, personal, and workspace). Built-in modes win on key
- * conflicts; plugins are required not to collide with them, so this is
- * defensive only.
+ * Combine built-in Amp modes with external agent modes (such as Claude
+ * Code) and agent modes registered by Amp plugins (project, system,
+ * personal, and workspace). Built-in modes win on key conflicts; plugins
+ * are required not to collide with them, so this is defensive only.
  */
 function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
   const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId.toLowerCase()));
@@ -104,9 +105,9 @@ function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
       .map((mode) => ({
         modelId: mode.modelId,
         name: mode.name,
-        description: mode.source
+        description: mode.description ?? (mode.source
           ? `Custom agent mode registered by the ${mode.source} plugin.`
-          : 'Custom agent mode registered by an installed Amp plugin.',
+          : 'Custom agent mode registered by an installed Amp plugin.'),
       })),
   ];
 }
@@ -224,7 +225,7 @@ interface AmpAcpAgentOptions {
   orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
   replayRetry?: { attempts: number; delayMs: number };
-  /** Override plugin-mode discovery; tests pass a stub to isolate from local plugins. */
+  /** Override external-agent and plugin-mode discovery; tests pass a stub to isolate from local agents and plugins. */
   discoverPluginModes?: (cwd: string) => PluginAgentMode[];
 }
 
@@ -253,7 +254,8 @@ export class AmpAcpAgent implements Agent {
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
-    this.discoverPluginModes = options.discoverPluginModes ?? discoverPluginModesFromDir;
+    this.discoverPluginModes = options.discoverPluginModes ??
+      ((cwd) => [...discoverExternalAgentModes(cwd), ...discoverPluginModesFromDir(cwd)]);
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {

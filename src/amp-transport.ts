@@ -20,8 +20,9 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 
 /**
  * Amp agent mode: one of the built-in modes (`low`, `medium`, `high`,
- * `ultra`) or an agent mode registered by an installed Amp plugin
- * (e.g. "grok45"), referenced by key. Amp resolves the actual model routing;
+ * `ultra`), an external agent (e.g. "external-agent:claude-code"), or an
+ * agent mode registered by an installed Amp plugin (e.g. "grok45"),
+ * referenced by key. Amp resolves the actual model routing;
  * both the CLI --mode flag and the Amp SDK accept the mode key as a string.
  */
 export type AmpMode = 'low' | 'medium' | 'high' | 'ultra' | (string & {});

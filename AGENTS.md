@@ -18,6 +18,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
 - `src/plugin-modes.ts` — Discovers agent modes from Amp plugins (`// @amp-agent-mode` comments in project/system plugin files, plus `amp plugins list` for Personal/Workspace plugins, cached 60s per cwd). Unknown but non-empty mode values pass through to Amp unchanged
+- `src/external-agents.ts` — Discovers external agent modes such as Claude Code (`external-agent:claude-code`) from `amp config external-agents list --json`, sharing the plugin-list cache and `AMP_ACP_DISABLE_PLUGIN_LIST` switch
 - `src/turn-usage.ts` — Aggregates a turn's token usage from Amp stream messages (last report wins per response id) for `PromptResponse.usage`
 - `src/utils.ts` — Node-to-Web stream converters
 

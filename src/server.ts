@@ -184,12 +184,7 @@ function buildClaudeCodeEffortOption(s: Pick<SessionState, 'claudeEffort'>): Ses
     currentValue: s.claudeEffort,
     options: CLAUDE_CODE_EFFORTS.map((effort) => ({
       value: effort,
-      // Clients such as Zed label the selector button with the value name
-      // alone, so it must not read like the Permissions "Default" or an
-      // Amp mode such as "high".
-      name: effort === CLAUDE_CODE_DEFAULT
-        ? 'Default effort'
-        : `${effort[0]!.toUpperCase()}${effort.slice(1)} effort`,
+      name: effort === CLAUDE_CODE_DEFAULT ? 'Default' : effort,
       description: effort === CLAUDE_CODE_DEFAULT
         ? "Use Claude Code's default effort."
         : `Run Claude Code at ${effort} effort.`,

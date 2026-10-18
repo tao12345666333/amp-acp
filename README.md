@@ -142,7 +142,7 @@ Local sessions use the Claude Code login on your machine: install Claude Code 2.
 
 To pin the Claude model, pick one of the entries listed under Claude Code in the same Amp Mode selector: *Claude Code (Opus 5.5)*, *(Fable 5.1)*, *(Sonnet 5.5)*, or *(Haiku 5.5)*. Their values have the form `external-agent:claude-code/<model id>`, the model ID Amp reports for Claude Code usage, and clients can set any other model ID available on your Claude plan the same way through `session/set_config_option` (`amp-mode`). Plain *Claude Code* lets Claude Code pick its default model. The model lives in the Amp Mode selector rather than in a separate option because some ACP clients show only one selector per category.
 
-While Claude Code is selected, a **Claude Code Effort** option (*Default effort*, *Low effort*, … *Max effort*) also appears.
+While Claude Code is selected, a **Claude Code Effort** option (*Default*, `low`, `medium`, `high`, `xhigh`, or `max`) also appears.
 
 A model or non-default effort is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. Only the CLI transport can pass thread features, so the model entries and the effort option are hidden for Orb sessions and with `AMP_ACP_TRANSPORT=sdk`; switching a session to Orb resets a pinned model to plain Claude Code, which then uses its defaults.
 

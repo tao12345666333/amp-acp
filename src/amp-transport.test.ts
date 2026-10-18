@@ -240,14 +240,13 @@ process.exit(3);
     };
 
     await runWith([
-      ['amp-mode', 'external-agent:claude-code'],
-      ['claude-code-model', 'claude-haiku-5-5'],
+      ['amp-mode', 'external-agent:claude-code/claude-haiku-5-5'],
       ['claude-code-effort', 'low'],
     ]);
-    // Leaving Claude Code mode must not send the earlier Claude Code choices.
+    // Leaving Claude Code mode must not send the earlier Claude Code effort.
     await runWith([
-      ['amp-mode', 'external-agent:claude-code'],
-      ['claude-code-model', 'claude-opus-5-5'],
+      ['amp-mode', 'external-agent:claude-code/claude-opus-5-5'],
+      ['claude-code-effort', 'high'],
       ['amp-mode', 'high'],
     ]);
 

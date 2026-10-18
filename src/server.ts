@@ -52,6 +52,8 @@ const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
 const CONFIG_EXECUTOR = 'execution-environment';
+const CONFIG_CLAUDE_CODE_MODEL = 'claude-code-model';
+const CONFIG_CLAUDE_CODE_EFFORT = 'claude-code-effort';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
 const EXECUTORS = ['local', 'orb'] as const;
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
@@ -80,6 +82,25 @@ const AMP_MODELS = [
     description: 'Maximum capability for the most demanding tasks.',
   },
 ] as const;
+
+/** Amp mode key of the Claude Code external agent. */
+const CLAUDE_CODE_MODE = 'external-agent:claude-code';
+/** Sentinel value for "let Claude Code choose": no `--features` entry is sent. */
+const CLAUDE_CODE_DEFAULT = 'default';
+
+/**
+ * Claude Code models offered in the selector. Any other model ID Claude Code
+ * supports can still be set through the config option and passes through.
+ */
+const CLAUDE_CODE_MODELS = [
+  { value: CLAUDE_CODE_DEFAULT, name: 'Default', description: "Use Claude Code's default model." },
+  { value: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: 'Most capable Claude model for complex work.' },
+  { value: 'claude-fable-5-1', name: 'Claude Fable 5.1', description: 'Claude Fable 5.1.' },
+  { value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', description: 'Balanced speed and capability.' },
+  { value: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', description: 'Fastest Claude model for small tasks.' },
+] as const;
+
+const CLAUDE_CODE_EFFORTS = [CLAUDE_CODE_DEFAULT, 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 type PermissionMode = typeof PERMISSION_MODES[number];
 type Executor = typeof EXECUTORS[number];
@@ -124,7 +145,69 @@ function isExecutor(executor: string): executor is Executor {
   return EXECUTORS.some((candidate) => candidate === executor);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor'>): SessionConfigOption[] {
+function isClaudeCodeEffort(effort: string): boolean {
+  return CLAUDE_CODE_EFFORTS.some((candidate) => candidate === effort);
+}
+
+function isClaudeCodeMode(mode: string): boolean {
+  return mode.toLowerCase() === CLAUDE_CODE_MODE;
+}
+
+/**
+ * Thread features (`amp --features`) that pin the Claude Code model and
+ * effort. Amp applies them when the thread is created and keeps them for
+ * later turns, like the mode itself.
+ */
+function claudeCodeFeatures(s: Pick<SessionState, 'model' | 'claudeModel' | 'claudeEffort'>): string[] {
+  if (!isClaudeCodeMode(s.model)) return [];
+  const features: string[] = [];
+  if (s.claudeModel !== CLAUDE_CODE_DEFAULT) features.push(`model:${s.claudeModel}`);
+  if (s.claudeEffort !== CLAUDE_CODE_DEFAULT) features.push(`effort:${s.claudeEffort}`);
+  return features;
+}
+
+function buildClaudeCodeConfigOptions(s: Pick<SessionState, 'claudeModel' | 'claudeEffort'>): SessionConfigOption[] {
+  const modelOptions: { value: string; name: string; description: string }[] = [...CLAUDE_CODE_MODELS];
+  if (!modelOptions.some((option) => option.value === s.claudeModel)) {
+    modelOptions.push({ value: s.claudeModel, name: s.claudeModel, description: 'Custom Claude Code model ID.' });
+  }
+  return [
+    {
+      type: 'select',
+      id: CONFIG_CLAUDE_CODE_MODEL,
+      name: 'Claude Code Model',
+      description: 'Model Claude Code runs on your Claude plan. Applies when the Amp thread starts.',
+      category: 'model_config',
+      currentValue: s.claudeModel,
+      options: modelOptions,
+    },
+    {
+      type: 'select',
+      id: CONFIG_CLAUDE_CODE_EFFORT,
+      name: 'Claude Code Effort',
+      description: 'Reasoning effort for Claude Code. Applies when the Amp thread starts.',
+      category: 'thought_level',
+      currentValue: s.claudeEffort,
+      options: CLAUDE_CODE_EFFORTS.map((effort) => ({
+        value: effort,
+        name: effort === CLAUDE_CODE_DEFAULT ? 'Default' : effort,
+        description: effort === CLAUDE_CODE_DEFAULT
+          ? "Use Claude Code's default effort."
+          : `Run Claude Code at ${effort} effort.`,
+      })),
+    },
+  ];
+}
+
+/**
+ * `featuresSupported` is false when the session's transport cannot pass
+ * `--features` (the SDK, which Orb sessions use); the Claude Code model and
+ * effort options are hidden then instead of being silently ignored.
+ */
+function buildSessionConfigOptions(
+  s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor' | 'claudeModel' | 'claudeEffort'>,
+  featuresSupported: boolean,
+): SessionConfigOption[] {
   const ampModeOptions = s.models.map((model) => ({
     value: model.modelId,
     name: model.name,
@@ -187,6 +270,7 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'mod
       currentValue: s.model,
       options: ampModeOptions,
     },
+    ...(featuresSupported && isClaudeCodeMode(s.model) ? buildClaudeCodeConfigOptions(s) : []),
   ];
 }
 
@@ -198,6 +282,10 @@ interface SessionState {
   mode: PermissionMode;
   model: string;
   models: AmpModel[];
+  /** Claude Code model ID, or CLAUDE_CODE_DEFAULT. Used only in Claude Code mode. */
+  claudeModel: string;
+  /** Claude Code effort, or CLAUDE_CODE_DEFAULT. Used only in Claude Code mode. */
+  claudeEffort: string;
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
@@ -314,6 +402,8 @@ export class AmpAcpAgent implements Agent {
       mode: 'default',
       model: 'medium',
       models: buildAmpModels(this.discoverPluginModes(cwd)),
+      claudeModel: CLAUDE_CODE_DEFAULT,
+      claudeEffort: CLAUDE_CODE_DEFAULT,
       executor: 'local',
       mcpConfig,
       cwd,
@@ -322,7 +412,7 @@ export class AmpAcpAgent implements Agent {
 
     const result: NewSessionResponse = {
       sessionId,
-      configOptions: buildSessionConfigOptions(session),
+      configOptions: buildSessionConfigOptions(session, this.supportsFeatures(session)),
     };
 
     setImmediate(async () => {
@@ -399,8 +489,17 @@ export class AmpAcpAgent implements Agent {
     });
 
     return {
-      configOptions: buildSessionConfigOptions(session),
+      configOptions: buildSessionConfigOptions(session, this.supportsFeatures(session)),
     };
+  }
+
+  private transportFor(s: Pick<SessionState, 'executor'>): AmpTransport {
+    return s.executor === 'orb' ? this.orbTransport : this.transport;
+  }
+
+  /** Only the CLI transport passes thread features (`--features`). */
+  private supportsFeatures(s: Pick<SessionState, 'executor'>): boolean {
+    return this.transportFor(s).name === 'cli';
   }
 
   private sessionFromMapping(
@@ -420,6 +519,10 @@ export class AmpAcpAgent implements Agent {
       // authority on resolving or rejecting it when the prompt runs.
       model: mapping.model?.trim() ? mapping.model : 'medium',
       models,
+      claudeModel: mapping.claudeModel?.trim() ? mapping.claudeModel : CLAUDE_CODE_DEFAULT,
+      claudeEffort: mapping.claudeEffort && isClaudeCodeEffort(mapping.claudeEffort)
+        ? mapping.claudeEffort
+        : CLAUDE_CODE_DEFAULT,
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd,
@@ -433,6 +536,9 @@ export class AmpAcpAgent implements Agent {
       threadId: s.threadId,
       mode: s.mode,
       model: s.model,
+      // Defaults are omitted so mappings of non-Claude Code sessions are unchanged.
+      ...(s.claudeModel !== CLAUDE_CODE_DEFAULT && { claudeModel: s.claudeModel }),
+      ...(s.claudeEffort !== CLAUDE_CODE_DEFAULT && { claudeEffort: s.claudeEffort }),
       executor: s.executor,
       cwd: s.cwd,
     });
@@ -461,7 +567,7 @@ export class AmpAcpAgent implements Agent {
     }
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
-    return { configOptions: buildSessionConfigOptions(session) };
+    return { configOptions: buildSessionConfigOptions(session, this.supportsFeatures(session)) };
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -522,6 +628,11 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
     }
 
+    if (this.transportFor(s).name === 'cli') {
+      const features = claudeCodeFeatures(s);
+      if (features.length > 0) options.features = features;
+    }
+
     if (s.threadId) {
       options.continue = s.threadId;
     } else if (process.env.AMP_ACP_CONTINUE_LATEST) {
@@ -534,7 +645,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     const turnUsage = new TurnUsage();
 
     try {
-      const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
+      const transport = this.transportFor(s);
       for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         turnUsage.add(message);
         if (message.session_id) {
@@ -621,6 +732,22 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
         s.mode = params.value;
         break;
+      case CONFIG_CLAUDE_CODE_MODEL: {
+        // Claude Code accepts any model ID on the user's plan; commas would
+        // split the `--features` list, so reject them along with whitespace.
+        const model = params.value.trim();
+        if (!model || /[\s,]/.test(model)) {
+          throw new Error(`Unsupported Claude Code model: ${params.value}`);
+        }
+        s.claudeModel = model;
+        break;
+      }
+      case CONFIG_CLAUDE_CODE_EFFORT:
+        if (!isClaudeCodeEffort(params.value)) {
+          throw new Error(`Unsupported Claude Code effort: ${params.value}`);
+        }
+        s.claudeEffort = params.value;
+        break;
       case CONFIG_AMP_MODE: {
         // Amp accepts built-in modes and plugin-provided custom agent modes
         // by key (case-insensitive). Discovery can lag Amp — a mode plugin
@@ -640,7 +767,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
 
     await this.persistSessionQuiet(params.sessionId, s);
 
-    const configOptions = buildSessionConfigOptions(s);
+    const configOptions = buildSessionConfigOptions(s, this.supportsFeatures(s));
     try {
       await this.client.sessionUpdate({
         sessionId: params.sessionId,

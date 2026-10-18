@@ -99,7 +99,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 
 Amp's streamed `session_id` is a durable `T-...` thread ID, distinct from amp-acp's `S-...` ACP session ID. amp-acp persists that exact mapping under `$XDG_STATE_HOME/amp-acp/sessions` (or `$AMP_ACP_STATE_DIR/sessions`) so `session/resume`, `session/load`, and native archival remain safe after adapter restarts. It never reconstructs the relationship from a working directory, title, timestamp, or thread listing.
 
-Mappings are small JSON records written atomically to an owner-only state directory (`0700`) with owner-only files (`0600`). They contain the ACP session ID, Amp thread ID, and the session's permission mode, Amp mode, and working directory — never prompts, responses, or credentials.
+Mappings are small JSON records written atomically to an owner-only state directory (`0700`) with owner-only files (`0600`). They contain the ACP session ID, Amp thread ID, and the session's permission mode, Amp mode, Claude Code model and effort, and working directory — never prompts, responses, or credentials.
 
 Compatible ACP clients can detect protocol revision 1 at `agentCapabilities._meta["amp-acp/thread-lifecycle"]` and use these custom methods:
 
@@ -126,7 +126,7 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 
 ### Resuming sessions
 
-amp-acp advertises the ACP `loadSession` capability. Once a prompt has started an Amp thread, the ACP session ID is mapped to that thread in the durable session store described above (`$XDG_STATE_HOME/amp-acp/sessions`, one file per session; respects `%LOCALAPPDATA%\amp-acp` on Windows and can be overridden with `AMP_ACP_STATE_DIR`). The store also records the session's permission mode, Amp mode, and execution environment, so when a client calls `session/load`, amp-acp restores those settings and continues the same thread (equivalent to `amp threads continue <id>`), even across amp-acp process restarts.
+amp-acp advertises the ACP `loadSession` capability. Once a prompt has started an Amp thread, the ACP session ID is mapped to that thread in the durable session store described above (`$XDG_STATE_HOME/amp-acp/sessions`, one file per session; respects `%LOCALAPPDATA%\amp-acp` on Windows and can be overridden with `AMP_ACP_STATE_DIR`). The store also records the session's permission mode, Amp mode, Claude Code model and effort, and execution environment, so when a client calls `session/load`, amp-acp restores those settings and continues the same thread (equivalent to `amp threads continue <id>`), even across amp-acp process restarts.
 
 During `session/load`, prior messages are replayed to the client as `session/update` notifications (user/agent messages, thinking, and tool calls) using `amp threads export`, so the client can rebuild the transcript. Replay is best-effort: if the export fails, the session still loads and the thread still continues with full server-side context.
 
@@ -139,6 +139,13 @@ By default, amp-acp executes the installed Amp CLI directly through its streamin
 Amp can run Claude Code on your Claude Pro/Max plan as an external agent mode (see [Amp's docs](https://ampcode.com/docs/the-dial#use-your-claude-subscription)). amp-acp lists every active external agent reported by `amp config external-agents list --json` right after the built-in modes, so **Claude Code** appears in the Amp Mode selector. Selecting it runs the prompt with `--mode external-agent:claude-code`, the same as `amp -x --mode external-agent:claude-code`.
 
 Local sessions use the Claude Code login on your machine: install Claude Code 2.1.276 or later, run `claude` and `/login` with a Pro or Max plan, and keep `claude` on the `PATH` that amp-acp inherits. Orb sessions use the Claude subscription linked in Amp Settings → Model Routing. Amp CLIs without external agent support simply list none. The listing shares the 60-second cache and the `AMP_ACP_DISABLE_PLUGIN_LIST=1` switch described below.
+
+While Claude Code is the selected mode, two more options appear:
+
+- **Claude Code Model** — *Default* (Claude Code chooses), `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5-5`, or `claude-haiku-5-5`. Clients can also set any other model ID available on your Claude plan through `session/set_config_option` (`claude-code-model`).
+- **Claude Code Effort** — *Default*, `low`, `medium`, `high`, `xhigh`, or `max`.
+
+A non-default choice is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. Only the CLI transport can pass thread features, so the two options are hidden for Orb sessions and with `AMP_ACP_TRANSPORT=sdk`; Claude Code then uses its defaults.
 
 ### Plugin agent modes
 

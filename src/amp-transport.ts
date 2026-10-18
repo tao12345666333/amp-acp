@@ -31,6 +31,8 @@ export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
   mode?: AmpMode;
+  /** Thread features (`amp --features`), such as `model:<id>`; CLI transport only. */
+  features?: string[];
   executor?: 'local' | 'orb';
   project?: string;
   dangerouslyAllowAll?: boolean;
@@ -154,6 +156,7 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
 
   args.push('--execute', '--stream-json', '--no-archive-after-execute');
   if (options.mode) args.push('--mode', options.mode);
+  if (options.features?.length) args.push('--features', options.features.join(','));
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));
 

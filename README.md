@@ -142,10 +142,10 @@ Local sessions use the Claude Code login on your machine: install Claude Code 2.
 
 While Claude Code is the selected mode, two more options appear:
 
-- **Claude Code Model** — *Default* (Claude Code chooses), `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5-5`, or `claude-haiku-5-5`. Clients can also set any other model ID available on your Claude plan through `session/set_config_option` (`claude-code-model`).
-- **Claude Code Effort** — *Default*, `low`, `medium`, `high`, `xhigh`, or `max`.
+- **Claude Code Model** — *Default model* (Claude Code chooses), `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5-5`, or `claude-haiku-5-5`. Clients can also set any other model ID available on your Claude plan through `session/set_config_option` (`claude-code-model`).
+- **Claude Code Effort** — *Default effort*, `low`, `medium`, `high`, `xhigh`, or `max`.
 
-A non-default choice is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. Only the CLI transport can pass thread features, so the two options are hidden for Orb sessions and with `AMP_ACP_TRANSPORT=sdk`; Claude Code then uses its defaults.
+Each value is labeled on its own (for example *Claude Haiku 5.5* or *High effort*), because some clients, including Zed, show only the selected value on the selector button. A non-default choice is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. Only the CLI transport can pass thread features, so the two options are hidden for Orb sessions and with `AMP_ACP_TRANSPORT=sdk`; Claude Code then uses its defaults.
 
 ### Plugin agent modes
 

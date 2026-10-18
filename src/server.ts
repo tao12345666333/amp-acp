@@ -93,7 +93,7 @@ const CLAUDE_CODE_DEFAULT = 'default';
  * supports can still be set through the config option and passes through.
  */
 const CLAUDE_CODE_MODELS = [
-  { value: CLAUDE_CODE_DEFAULT, name: 'Default', description: "Use Claude Code's default model." },
+  { value: CLAUDE_CODE_DEFAULT, name: 'Default model', description: "Use Claude Code's default model." },
   { value: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: 'Most capable Claude model for complex work.' },
   { value: 'claude-fable-5-1', name: 'Claude Fable 5.1', description: 'Claude Fable 5.1.' },
   { value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', description: 'Balanced speed and capability.' },
@@ -190,7 +190,12 @@ function buildClaudeCodeConfigOptions(s: Pick<SessionState, 'claudeModel' | 'cla
       currentValue: s.claudeEffort,
       options: CLAUDE_CODE_EFFORTS.map((effort) => ({
         value: effort,
-        name: effort === CLAUDE_CODE_DEFAULT ? 'Default' : effort,
+        // Clients such as Zed label the selector button with the value name
+        // alone, so it must not read like the Permissions "Default" or an
+        // Amp mode such as "high".
+        name: effort === CLAUDE_CODE_DEFAULT
+          ? 'Default effort'
+          : `${effort[0]!.toUpperCase()}${effort.slice(1)} effort`,
         description: effort === CLAUDE_CODE_DEFAULT
           ? "Use Claude Code's default effort."
           : `Run Claude Code at ${effort} effort.`,

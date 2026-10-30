@@ -186,6 +186,30 @@ process.exit(3);
     });
   });
 
+  it('builds arguments for a new and a continued Orb CLI thread', () => {
+    expect(buildAmpCliArgs({ ...baseOptions, executor: 'orb', project: 'acme/widgets' })).toEqual([
+      '--execute',
+      '--stream-json',
+      '--no-archive-after-execute',
+      '--orb-execute',
+      '--project',
+      'acme/widgets',
+      '--mode',
+      'medium',
+    ]);
+    expect(buildAmpCliArgs({ ...baseOptions, executor: 'orb', continue: 'T-test-thread' })).toEqual([
+      'threads',
+      'continue',
+      'T-test-thread',
+      '--execute',
+      '--stream-json',
+      '--no-archive-after-execute',
+      '--orb-execute',
+      '--mode',
+      'medium',
+    ]);
+  });
+
   it('builds arguments for continuing a specific CLI thread', () => {
     expect(buildAmpCliArgs({
       ...baseOptions,
@@ -261,6 +285,59 @@ process.exit(3);
         'model:claude-haiku-5-5,effort:low',
       ],
       ['--execute', '--stream-json', '--no-archive-after-execute', '--mode', 'high'],
+    ]);
+  });
+
+  it('runs Orb sessions through the CLI transport with the Claude Code model and effort', async () => {
+    const runs: unknown[] = [];
+    const cliTransport = createCliTransport(process.execPath, [argsFixturePath]);
+    const agent = new AmpAcpAgent({ sessionUpdate: async () => {} } as unknown as AgentSideConnection, {
+      name: 'cli',
+      async *execute(request) {
+        for await (const message of cliTransport.execute(request)) {
+          if (message.type === 'result') runs.push((message as { result?: unknown }).result);
+          yield message;
+        }
+      },
+    }, {
+      threadStore: { load: async () => null, save: async () => {} },
+      discoverPluginModes: () => [{ modelId: 'external-agent:claude-code', name: 'Claude Code' }],
+    });
+    const { sessionId } = await agent.newSession({ cwd: fixtureDir, mcpServers: [] });
+    const session = await agent.setSessionConfigOption({ sessionId, configId: 'execution-environment', value: 'orb' });
+    // The model entries and the effort option stay available for Orb sessions.
+    expect(session.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
+      options: expect.arrayContaining([expect.objectContaining({ value: 'external-agent:claude-code/claude-opus-5-5' })]),
+    });
+    await agent.setSessionConfigOption({ sessionId, configId: 'amp-mode', value: 'external-agent:claude-code/claude-opus-5-5' });
+    await agent.setSessionConfigOption({ sessionId, configId: 'claude-code-effort', value: 'high' });
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'first' }] });
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'second' }] });
+
+    expect(runs).toEqual([
+      [
+        '--execute',
+        '--stream-json',
+        '--no-archive-after-execute',
+        '--orb-execute',
+        '--mode',
+        'external-agent:claude-code',
+        '--features',
+        'model:claude-opus-5-5,effort:high',
+      ],
+      [
+        'threads',
+        'continue',
+        'T-01a14cf6-e0d8-7023-a411-73a8e2452b5c',
+        '--execute',
+        '--stream-json',
+        '--no-archive-after-execute',
+        '--orb-execute',
+        '--mode',
+        'external-agent:claude-code',
+        '--features',
+        'model:claude-opus-5-5,effort:high',
+      ],
     ]);
   });
 

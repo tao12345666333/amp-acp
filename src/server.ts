@@ -194,7 +194,7 @@ function buildClaudeCodeEffortOption(s: Pick<SessionState, 'claudeEffort'>): Ses
 
 /**
  * `featuresSupported` is false when the session's transport cannot pass
- * `--features` (the SDK, which Orb sessions use); the Claude Code model
+ * `--features` (the SDK, with `AMP_ACP_TRANSPORT=sdk`); the Claude Code model
  * entries and effort option are hidden then instead of being silently
  * ignored.
  */
@@ -305,7 +305,7 @@ interface AmpAcpAgentOptions {
   threadStore?: ThreadMappingStore;
   setThreadArchived?: SetThreadArchived;
   exportThread?: ThreadHistoryExporter;
-  /** Transport used for Orb execution; defaults to the Amp SDK transport. */
+  /** Transport used for Orb execution; defaults to the local transport. */
   orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
   replayRetry?: { attempts: number; delayMs: number };
@@ -333,7 +333,7 @@ export class AmpAcpAgent implements Agent {
   ) {
     this.client = client;
     this.transport = transport;
-    this.orbTransport = options.orbTransport ?? createAmpTransport('sdk');
+    this.orbTransport = options.orbTransport ?? transport;
     this.threadStore = options.threadStore ?? new FileThreadMappingStore();
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
@@ -728,7 +728,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           throw new Error(`Unsupported execution environment: ${params.value}`);
         }
         s.executor = params.value;
-        // Orb sessions cannot pass the Claude Code model; fall back visibly
+        // The SDK transport cannot pass the Claude Code model; fall back visibly
         // to Claude Code's default model instead of failing the next prompt.
         if (!this.supportsFeatures(s) && parseClaudeCodeMode(s.model)?.model) {
           s.model = CLAUDE_CODE_MODE;

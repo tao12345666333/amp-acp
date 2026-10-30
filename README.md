@@ -112,7 +112,7 @@ Existing ACP clients remain compatible and can ignore the extension metadata. Se
 
 ### Orb execution
 
-Select **Orb** under **Execution Environment** in the ACP session configuration to run the Amp thread in a remote Amp Orb. Orb sessions always use the `@ampcode/sdk` transport, even when local execution uses the default CLI transport.
+Select **Orb** under **Execution Environment** in the ACP session configuration to run the Amp thread in a remote Amp Orb. Orb sessions use the same transport as local ones: by default the Amp CLI with `--orb-execute`, the same as `amp -ox`, or `@ampcode/sdk` with `AMP_ACP_TRANSPORT=sdk`.
 
 By default, Amp infers the project from the Git remotes of the directory supplied by the ACP client. Set `AMP_ACP_ORB_PROJECT` to an Amp project reference (`namespace/name`, `owner/repo`, or a repository URL) to override that inference.
 
@@ -144,7 +144,7 @@ To pin the Claude model, pick one of the entries listed under Claude Code in the
 
 While Claude Code is selected, a **Claude Code Effort** option (*Default*, `low`, `medium`, `high`, `xhigh`, or `max`) also appears.
 
-A model or non-default effort is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. Only the CLI transport can pass thread features, so the model entries and the effort option are hidden for Orb sessions and with `AMP_ACP_TRANSPORT=sdk`; switching a session to Orb resets a pinned model to plain Claude Code, which then uses its defaults.
+A model or non-default effort is sent as Amp thread features, the same as `amp -x --mode external-agent:claude-code --features model:claude-opus-5-5,effort:high`. Amp applies them when the thread is created and keeps them for the rest of the thread, as it does with the mode, so choose them before the first prompt. This works in local and Orb sessions. Only the CLI transport can pass thread features, so the model entries and the effort option are hidden with `AMP_ACP_TRANSPORT=sdk`.
 
 ### Plugin agent modes
 

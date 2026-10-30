@@ -31,7 +31,7 @@ export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
   mode?: AmpMode;
-  /** Thread features (`amp --features`), such as `model:<id>`; CLI transport only. */
+  /** Thread features (`amp --features`), such as `model:<id>`; CLI transport only, local and Orb. */
   features?: string[];
   executor?: 'local' | 'orb';
   project?: string;
@@ -155,6 +155,11 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
   }
 
   args.push('--execute', '--stream-json', '--no-archive-after-execute');
+  if (options.executor === 'orb') {
+    // On `threads continue`, Amp sends the message to the thread's own Orb.
+    args.push('--orb-execute');
+    if (options.project) args.push('--project', options.project);
+  }
   if (options.mode) args.push('--mode', options.mode);
   if (options.features?.length) args.push('--features', options.features.join(','));
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');

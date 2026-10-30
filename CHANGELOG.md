@@ -5,7 +5,11 @@
 ### Added
 
 - List Amp external agents, such as Claude Code (`external-agent:claude-code`), in the Amp Mode selector after the built-in modes. They are discovered from `amp config external-agents list --json` and run with `--mode <mode key>`, so Claude Code uses your Claude Pro/Max login (local) or linked subscription (Orb).
-- Choose the Claude Code model from the Amp Mode selector (*Claude Code (Opus 5.5)*, *(Sonnet 5.5)*, …, value `external-agent:claude-code/<model id>`) and its effort with the **Claude Code Effort** option, on local CLI sessions. Choices run as `--features model:<id>,effort:<level>`, apply when the thread is created, and persist for `session/load` and `session/resume`.
+- Choose the Claude Code model from the Amp Mode selector (*Claude Code (Opus 5.5)*, *(Sonnet 5.5)*, …, value `external-agent:claude-code/<model id>`) and its effort with the **Claude Code Effort** option, in local and Orb sessions on the CLI transport. Choices run as `--features model:<id>,effort:<level>`, apply when the thread is created, and persist for `session/load` and `session/resume`.
+
+### Changed
+
+- Orb sessions use the same transport as local sessions instead of always using `@ampcode/sdk`. With the default CLI transport they run with `--orb-execute` (and `--project` from `AMP_ACP_ORB_PROJECT`), the same as `amp -ox`, so Orb sessions can pass thread features such as the Claude Code model and effort. Set `AMP_ACP_TRANSPORT=sdk` to keep the SDK for both.
 
 ## 0.10.0 - 2026-10-09
 

@@ -22,6 +22,8 @@ export interface PluginAgentMode {
   name: string;
   /** Name of the plugin file or plugin that declared the mode, when known. */
   source?: string;
+  /** Description shown in clients; defaults to one naming the plugin source. */
+  description?: string;
 }
 
 export interface DiscoverPluginModesOptions {
@@ -42,7 +44,7 @@ const PLUGIN_LIST_TIMEOUT_MS = 8000;
  */
 export const PLUGIN_LIST_CACHE_TTL_MS = 60_000;
 
-/** Successful `amp plugins list` stdout with its expiry, keyed by cwd + CLI path. */
+/** Successful Amp CLI listing stdout with its expiry, keyed by cwd + CLI path + args. */
 const pluginListCache = new Map<string, { expires: number; stdout: string }>();
 
 /**
@@ -163,21 +165,22 @@ export function parseAmpPluginsList(output: string): PluginAgentMode[] {
 }
 
 /**
- * Run `amp plugins list` in `cwd` and return stdout, or null on any failure.
- * Successful output is cached per process for `(cwd, AMP_CLI_PATH)` and
- * reused until it is PLUGIN_LIST_CACHE_TTL_MS old, so `session/new` does
- * not block the event loop on a ~1s spawn every time. Failures are not
- * cached, so a later session can retry.
+ * Run a read-only Amp CLI listing command (such as `amp plugins list`) in
+ * `cwd` and return stdout, or null on any failure. Successful output is
+ * cached per process for `(cwd, AMP_CLI_PATH, args)` and reused until it is
+ * PLUGIN_LIST_CACHE_TTL_MS old, so `session/new` does not block the event
+ * loop on a ~1s spawn every time. Failures are not cached, so a later
+ * session can retry.
  * Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI (used by tests).
  */
-export function readAmpPluginsList(cwd: string): string | null {
+export function readAmpCliListing(cwd: string, args: string[]): string | null {
   if (process.env.AMP_ACP_DISABLE_PLUGIN_LIST === '1') return null;
   const command = process.env.AMP_CLI_PATH ?? 'amp';
-  const cacheKey = `${cwd}\0${command}`;
+  const cacheKey = [cwd, command, ...args].join('\0');
   const cached = pluginListCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.stdout;
   try {
-    const result = spawnSync(command, ['plugins', 'list'], {
+    const result = spawnSync(command, args, {
       cwd,
       encoding: 'utf8',
       timeout: PLUGIN_LIST_TIMEOUT_MS,
@@ -195,7 +198,12 @@ export function readAmpPluginsList(cwd: string): string | null {
   }
 }
 
-/** Drop cached `amp plugins list` output. Used by tests. */
+/** Run `amp plugins list` in `cwd`; see readAmpCliListing for caching. */
+export function readAmpPluginsList(cwd: string): string | null {
+  return readAmpCliListing(cwd, ['plugins', 'list']);
+}
+
+/** Drop cached Amp CLI listing output. Used by tests. */
 export function clearPluginListCache(): void {
   pluginListCache.clear();
 }

@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import type { AgentSideConnection } from '@agentclientprotocol/sdk';
+import { AmpAcpAgent } from './server.js';
 import {
   buildAmpArchiveArgs,
   buildAmpCliArgs,
@@ -22,6 +24,7 @@ const baseOptions: AmpExecutionOptions = {
 
 let fixtureDir: string;
 let fixturePath: string;
+let argsFixturePath: string;
 
 beforeAll(async () => {
   fixtureDir = await mkdtemp(path.join(os.tmpdir(), 'amp-transport-test-'));
@@ -36,6 +39,13 @@ if (prompt === 'fail') {
 console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-cli-test' }));
 if (prompt === 'wait') await new Promise((resolve) => setTimeout(resolve, 30000));
 console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: prompt }));
+`);
+  // Reports the CLI arguments it was started with as the turn result.
+  argsFixturePath = path.join(fixtureDir, 'fake-amp-args.mjs');
+  await writeFile(argsFixturePath, `
+for await (const _ of process.stdin);
+console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-01a14cf6-e0d8-7023-a411-73a8e2452b5c' }));
+console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: process.argv.slice(2) }));
 `);
 });
 
@@ -176,6 +186,30 @@ process.exit(3);
     });
   });
 
+  it('builds arguments for a new and a continued Orb CLI thread', () => {
+    expect(buildAmpCliArgs({ ...baseOptions, executor: 'orb', project: 'acme/widgets' })).toEqual([
+      '--execute',
+      '--stream-json',
+      '--no-archive-after-execute',
+      '--orb-execute',
+      '--project',
+      'acme/widgets',
+      '--mode',
+      'medium',
+    ]);
+    expect(buildAmpCliArgs({ ...baseOptions, executor: 'orb', continue: 'T-test-thread' })).toEqual([
+      'threads',
+      'continue',
+      'T-test-thread',
+      '--execute',
+      '--stream-json',
+      '--no-archive-after-execute',
+      '--orb-execute',
+      '--mode',
+      'medium',
+    ]);
+  });
+
   it('builds arguments for continuing a specific CLI thread', () => {
     expect(buildAmpCliArgs({
       ...baseOptions,
@@ -203,6 +237,107 @@ process.exit(3);
       'continue',
       '--last',
       '--execute',
+    ]);
+  });
+
+  it('passes the selected Claude Code model and effort to the CLI only in Claude Code mode', async () => {
+    const runs: unknown[] = [];
+    const cliTransport = createCliTransport(process.execPath, [argsFixturePath]);
+    const agent = new AmpAcpAgent({ sessionUpdate: async () => {} } as unknown as AgentSideConnection, {
+      name: 'cli',
+      async *execute(request) {
+        for await (const message of cliTransport.execute(request)) {
+          if (message.type === 'result') runs.push((message as { result?: unknown }).result);
+          yield message;
+        }
+      },
+    }, {
+      threadStore: { load: async () => null, save: async () => {} },
+      discoverPluginModes: () => [],
+    });
+    const runWith = async (settings: [string, string][]) => {
+      const { sessionId } = await agent.newSession({ cwd: fixtureDir, mcpServers: [] });
+      for (const [configId, value] of settings) {
+        await agent.setSessionConfigOption({ sessionId, configId, value });
+      }
+      await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] });
+    };
+
+    await runWith([
+      ['amp-mode', 'external-agent:claude-code/claude-haiku-5-5'],
+      ['claude-code-effort', 'low'],
+    ]);
+    // Leaving Claude Code mode must not send the earlier Claude Code effort.
+    await runWith([
+      ['amp-mode', 'external-agent:claude-code/claude-opus-5-5'],
+      ['claude-code-effort', 'high'],
+      ['amp-mode', 'high'],
+    ]);
+
+    expect(runs).toEqual([
+      [
+        '--execute',
+        '--stream-json',
+        '--no-archive-after-execute',
+        '--mode',
+        'external-agent:claude-code',
+        '--features',
+        'model:claude-haiku-5-5,effort:low',
+      ],
+      ['--execute', '--stream-json', '--no-archive-after-execute', '--mode', 'high'],
+    ]);
+  });
+
+  it('runs Orb sessions through the CLI transport with the Claude Code model and effort', async () => {
+    const runs: unknown[] = [];
+    const cliTransport = createCliTransport(process.execPath, [argsFixturePath]);
+    const agent = new AmpAcpAgent({ sessionUpdate: async () => {} } as unknown as AgentSideConnection, {
+      name: 'cli',
+      async *execute(request) {
+        for await (const message of cliTransport.execute(request)) {
+          if (message.type === 'result') runs.push((message as { result?: unknown }).result);
+          yield message;
+        }
+      },
+    }, {
+      threadStore: { load: async () => null, save: async () => {} },
+      discoverPluginModes: () => [{ modelId: 'external-agent:claude-code', name: 'Claude Code' }],
+    });
+    const { sessionId } = await agent.newSession({ cwd: fixtureDir, mcpServers: [] });
+    const session = await agent.setSessionConfigOption({ sessionId, configId: 'execution-environment', value: 'orb' });
+    // The model entries and the effort option stay available for Orb sessions.
+    expect(session.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
+      options: expect.arrayContaining([expect.objectContaining({ value: 'external-agent:claude-code/claude-opus-5-5' })]),
+    });
+    await agent.setSessionConfigOption({ sessionId, configId: 'amp-mode', value: 'external-agent:claude-code/claude-opus-5-5' });
+    await agent.setSessionConfigOption({ sessionId, configId: 'claude-code-effort', value: 'high' });
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'first' }] });
+    await agent.prompt({ sessionId, prompt: [{ type: 'text', text: 'second' }] });
+
+    expect(runs).toEqual([
+      [
+        '--execute',
+        '--stream-json',
+        '--no-archive-after-execute',
+        '--orb-execute',
+        '--mode',
+        'external-agent:claude-code',
+        '--features',
+        'model:claude-opus-5-5,effort:high',
+      ],
+      [
+        'threads',
+        'continue',
+        'T-01a14cf6-e0d8-7023-a411-73a8e2452b5c',
+        '--execute',
+        '--stream-json',
+        '--no-archive-after-execute',
+        '--orb-execute',
+        '--mode',
+        'external-agent:claude-code',
+        '--features',
+        'model:claude-opus-5-5,effort:high',
+      ],
     ]);
   });
 

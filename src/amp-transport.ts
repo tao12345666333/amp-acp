@@ -20,8 +20,9 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 
 /**
  * Amp agent mode: one of the built-in modes (`low`, `medium`, `high`,
- * `ultra`) or an agent mode registered by an installed Amp plugin
- * (e.g. "grok45"), referenced by key. Amp resolves the actual model routing;
+ * `ultra`), an external agent (e.g. "external-agent:claude-code"), or an
+ * agent mode registered by an installed Amp plugin (e.g. "grok45"),
+ * referenced by key. Amp resolves the actual model routing;
  * both the CLI --mode flag and the Amp SDK accept the mode key as a string.
  */
 export type AmpMode = 'low' | 'medium' | 'high' | 'ultra' | (string & {});
@@ -30,6 +31,8 @@ export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
   mode?: AmpMode;
+  /** Thread features (`amp --features`), such as `model:<id>`; CLI transport only. */
+  features?: string[];
   executor?: 'local' | 'orb';
   project?: string;
   dangerouslyAllowAll?: boolean;
@@ -153,6 +156,7 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
 
   args.push('--execute', '--stream-json', '--no-archive-after-execute');
   if (options.mode) args.push('--mode', options.mode);
+  if (options.features?.length) args.push('--features', options.features.join(','));
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));
 

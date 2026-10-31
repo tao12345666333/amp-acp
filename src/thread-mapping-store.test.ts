@@ -29,6 +29,46 @@ describe('FileThreadMappingStore', () => {
     });
   });
 
+  it('retains a session before its first Amp turn', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId: null, cwd: '/tmp/project' });
+
+    expect(await store.load(sessionId)).toEqual({
+      sessionId,
+      threadId: null,
+      cwd: '/tmp/project',
+    });
+  });
+
+  it('lists persisted sessions and deletes them idempotently', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId, title: 'One' });
+    await store.save({ sessionId: 'S-mabc123-abcdeg', threadId: null, title: 'Two' });
+
+    expect((await store.list()).map((mapping) => mapping.sessionId).sort()).toEqual([
+      sessionId,
+      'S-mabc123-abcdeg',
+    ]);
+
+    await store.delete(sessionId);
+    await store.delete(sessionId);
+    expect(await store.load(sessionId)).toBeNull();
+    expect((await store.list()).map((mapping) => mapping.sessionId)).toEqual([
+      'S-mabc123-abcdeg',
+    ]);
+  });
+
+  it('ignores mapping files whose names are not valid session IDs', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId });
+    await writeFile(
+      path.join(stateDir, 'sessions', 'not-a-session.json'),
+      JSON.stringify({ sessionId: 'not-a-session', threadId, title: 'Injected' }),
+    );
+
+    expect((await store.list()).map((mapping) => mapping.sessionId)).toEqual([sessionId]);
+  });
+
   it('returns null for a legacy session with no persisted mapping', async () => {
     const store = new FileThreadMappingStore(stateDir);
 

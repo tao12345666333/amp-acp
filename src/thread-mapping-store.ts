@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isAmpThreadId } from './amp-transport.js';
 
@@ -8,7 +8,8 @@ const ACP_SESSION_ID_PATTERN = /^S-[a-z0-9]+-[a-z0-9]{6}$/i;
 
 export interface AmpThreadMapping {
   sessionId: string;
-  threadId: string;
+  /** Null until the first Amp turn starts a durable thread. */
+  threadId: string | null;
   /** Last selected ACP permission mode, if persisted. */
   mode?: string;
   /** Last selected Amp mode, if persisted. */
@@ -28,10 +29,16 @@ export interface AmpThreadMapping {
 export interface ThreadMappingStore {
   load(sessionId: string): Promise<AmpThreadMapping | null>;
   save(mapping: AmpThreadMapping): Promise<void>;
+  list?(): Promise<AmpThreadMapping[]>;
+  delete?(sessionId: string): Promise<void>;
+}
+
+export function isAcpSessionId(sessionId: string): boolean {
+  return ACP_SESSION_ID_PATTERN.test(sessionId);
 }
 
 function assertAcpSessionId(sessionId: string): void {
-  if (!ACP_SESSION_ID_PATTERN.test(sessionId)) {
+  if (!isAcpSessionId(sessionId)) {
     throw new Error(`Invalid ACP session ID: ${sessionId}`);
   }
 }
@@ -43,13 +50,13 @@ function validateMapping(value: unknown, expectedSessionId: string): AmpThreadMa
   const mapping = value as Record<string, unknown>;
   if (
     mapping.sessionId !== expectedSessionId
-    || !isAmpThreadId(mapping.threadId)
+    || (mapping.threadId !== null && !isAmpThreadId(mapping.threadId))
   ) {
     throw new Error(`Invalid persisted mapping for ACP session ${expectedSessionId}`);
   }
   const result: AmpThreadMapping = {
     sessionId: expectedSessionId,
-    threadId: mapping.threadId,
+    threadId: mapping.threadId as string | null,
   };
   for (const field of ['mode', 'model', 'effort', 'executor', 'cwd', 'title', 'updatedAt'] as const) {
     const fieldValue = mapping[field];
@@ -88,7 +95,7 @@ export class FileThreadMappingStore implements ThreadMappingStore {
 
   async save(mapping: AmpThreadMapping): Promise<void> {
     assertAcpSessionId(mapping.sessionId);
-    if (!isAmpThreadId(mapping.threadId)) {
+    if (mapping.threadId !== null && !isAmpThreadId(mapping.threadId)) {
       throw new Error(`Invalid Amp thread ID: ${mapping.threadId}`);
     }
     await mkdir(this.sessionsDir, { recursive: true, mode: 0o700 });
@@ -96,6 +103,40 @@ export class FileThreadMappingStore implements ThreadMappingStore {
     const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(mapping)}\n`, { mode: 0o600 });
     await rename(temporary, destination);
+  }
+
+  async list(): Promise<AmpThreadMapping[]> {
+    let names: string[];
+    try {
+      names = await readdir(this.sessionsDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const mappings: AmpThreadMapping[] = [];
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const sessionId = name.slice(0, -'.json'.length);
+      if (!isAcpSessionId(sessionId)) continue;
+      try {
+        const contents = await readFile(path.join(this.sessionsDir, name), 'utf8');
+        mappings.push(validateMapping(JSON.parse(contents), sessionId));
+      } catch {
+        // Ignore corrupt or partially written records; one bad file must not
+        // make every other session undiscoverable.
+      }
+    }
+    return mappings;
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    assertAcpSessionId(sessionId);
+    try {
+      await unlink(this.mappingPath(sessionId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
   }
 
   private mappingPath(sessionId: string): string {

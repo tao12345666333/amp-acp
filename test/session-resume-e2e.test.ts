@@ -177,8 +177,11 @@ describe('durable session resume across adapter restarts', () => {
       effort?: string;
       executor?: string;
       cwd?: string;
+      title?: string;
+      updatedAt?: string;
     };
-    expect(mapping).toEqual({
+    const { title, updatedAt, ...rest } = mapping;
+    expect(rest).toEqual({
       sessionId,
       threadId: THREAD_ID,
       mode: 'default',
@@ -187,6 +190,8 @@ describe('durable session resume across adapter restarts', () => {
       executor: 'local',
       cwd: fixtureDir,
     });
+    expect(title).toBe('first turn');
+    expect(updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
     // Second adapter process, same state dir: resume must reattach.
     const second = spawnAdapter();

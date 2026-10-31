@@ -53,7 +53,7 @@ import {
   stopReasonFromAssistant,
 } from './turn-events.js';
 import { toAcpNotifications } from './to-acp.js';
-import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
+import { exportThreadDetails, exportThreadHistory, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
 import packageJson from '../package.json';
 
@@ -64,6 +64,18 @@ const CONFIG_EXECUTOR = 'execution-environment';
 const CONFIG_REASONING_EFFORT = 'reasoning-effort';
 /** Maximum number of prompts accepted behind the active turn for one session. */
 const MAX_QUEUED_PROMPTS = 32;
+const MAX_SESSION_TITLE_LENGTH = 60;
+const FALLBACK_SESSION_TITLE = 'Amp session';
+
+/** Derive a stable title from the first user turn without calling a model. */
+function titleFromPrompt(prompt: PromptRequest['prompt']): string {
+  const text = prompt
+    .flatMap((chunk) => chunk.type === 'text' ? [chunk.text] : [])
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text ? text.slice(0, MAX_SESSION_TITLE_LENGTH).trim() : FALLBACK_SESSION_TITLE;
+}
 const PERMISSION_MODES = ['default', 'bypass'] as const;
 const EXECUTORS = ['local', 'orb'] as const;
 
@@ -276,6 +288,8 @@ interface SessionState {
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
+  title?: string;
+  updatedAt?: string;
   /** Last reported status per MCP server, used to avoid repeating notices. */
   mcpStatuses: Map<string, string>;
 }
@@ -445,14 +459,21 @@ export class AmpAcpAgent implements Agent {
 
     if (session.threadId) {
       try {
-        const messages = await exportThreadMessages(
+        const thread = await exportThreadDetails(
           this.exportThread,
           session.threadId,
           session.cwd,
           this.replayRetry.attempts,
           this.replayRetry.delayMs,
         );
-        for (const notification of historyToNotifications(messages, params.sessionId)) {
+        const exportedTitle = thread.title
+          ?.replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, MAX_SESSION_TITLE_LENGTH)
+          .trim();
+        if (exportedTitle) session.title = exportedTitle;
+        if (thread.updatedAt) session.updatedAt = thread.updatedAt;
+        for (const notification of historyToNotifications(thread.messages, params.sessionId)) {
           await this.client.sessionUpdate(notification);
         }
       } catch (e) {
@@ -460,6 +481,7 @@ export class AmpAcpAgent implements Agent {
         // without it, so a failed export must not fail the load.
         console.error('[acp] failed to replay thread history', e);
       }
+      await this.publishSessionInfo(params.sessionId, session);
     }
 
     setImmediate(async () => {
@@ -506,6 +528,8 @@ export class AmpAcpAgent implements Agent {
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd,
+      ...(mapping.title ? { title: mapping.title } : {}),
+      ...(mapping.updatedAt ? { updatedAt: mapping.updatedAt } : {}),
       mcpStatuses: new Map(),
     };
   }
@@ -520,6 +544,8 @@ export class AmpAcpAgent implements Agent {
       effort: s.effort,
       executor: s.executor,
       cwd: s.cwd,
+      ...(s.title ? { title: s.title } : {}),
+      ...(s.updatedAt ? { updatedAt: s.updatedAt } : {}),
     });
   }
 
@@ -529,6 +555,24 @@ export class AmpAcpAgent implements Agent {
       await this.persistSession(sessionId, s);
     } catch (e) {
       console.error('[acp] failed to persist session settings', e);
+    }
+  }
+
+  /** Persist and publish the current title/timestamp for a session. */
+  private async publishSessionInfo(sessionId: string, s: SessionState): Promise<void> {
+    await this.persistSessionQuiet(sessionId, s);
+    if (!s.title && !s.updatedAt) return;
+    try {
+      await this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'session_info_update',
+          ...(s.title ? { title: s.title } : {}),
+          ...(s.updatedAt ? { updatedAt: s.updatedAt } : {}),
+        },
+      });
+    } catch (e) {
+      console.error('[acp] failed to send session_info_update', e);
     }
   }
 
@@ -546,6 +590,7 @@ export class AmpAcpAgent implements Agent {
     }
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
+    await this.publishSessionInfo(params.sessionId, session);
     return { configOptions: buildSessionConfigOptions(session) };
   }
 
@@ -734,6 +779,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
     if (pendingText) content.push({ type: 'text', text: pendingText });
     const hasImages = content.some((block) => block.type === 'image');
+    if (!s.title) s.title = titleFromPrompt(params.prompt);
 
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
     const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
@@ -838,6 +884,9 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
       console.error('[amp] Execution error:', err);
       throw err;
+    } finally {
+      s.updatedAt = new Date().toISOString();
+      await this.publishSessionInfo(params.sessionId, s);
     }
   }
 

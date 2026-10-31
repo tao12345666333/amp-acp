@@ -393,6 +393,38 @@ describe('ACP Protocol End-to-End', () => {
       (n) => n.update && 'sessionUpdate' in n.update && n.update.sessionUpdate === 'available_commands_update',
     );
     expect(cmdUpdate).toBeDefined();
+    if (!cmdUpdate || !('availableCommands' in cmdUpdate.update)) {
+      throw new Error('missing available_commands_update');
+    }
+    expect(cmdUpdate.update.availableCommands.map((command) => command.name)).toEqual([
+      'init',
+      'review',
+      'ship',
+      'update-base',
+      'refactor-commits',
+    ]);
+  });
+
+  it('forwards built-in Amp slash prompts to the agent unchanged', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+
+    await agentConnection.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: '/review focus on the retry path' }],
+    });
+
+    expect(prompts.at(-1)?.prompt).toBe('/review focus on the retry path');
+  });
+
+  it('replaces /init with the AGENTS.md authoring prompt', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+
+    await agentConnection.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: '/init' }],
+    });
+
+    expect(prompts.at(-1)?.prompt).toContain('create an AGENTS.md file');
   });
 });
 

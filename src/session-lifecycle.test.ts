@@ -72,6 +72,22 @@ describe('session list, delete, and close', () => {
     expect(after.sessions[0]!.updatedAt).toBeString();
   });
 
+  it('lists and loads a session created before its first prompt after a restart', async () => {
+    const first = createAgent();
+    await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
+
+    const second = createAgent();
+    await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const listed = await second.listSessions({ cwd: '/tmp' });
+    expect(listed.sessions.map((entry) => entry.sessionId)).toEqual([session.sessionId]);
+
+    const loaded = await second.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
+    expect(loaded.configOptions).toBeDefined();
+    const resumed = await second.resumeSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
+    expect(resumed.configOptions).toBeDefined();
+  });
+
   it('lists sessions across adapter restarts and filters by cwd', async () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
@@ -102,6 +118,9 @@ describe('session list, delete, and close', () => {
 
     await expect(agent.listSessions({ cwd: '/tmp', cursor: 'not-a-cursor' }))
       .rejects.toThrow('Invalid session list cursor');
+    const trailing = Buffer.from('50trailing-garbage', 'utf8').toString('base64url');
+    await expect(agent.listSessions({ cwd: '/tmp', cursor: trailing }))
+      .rejects.toThrow('Invalid session list cursor');
   });
 
   it('deletes mappings idempotently and keeps load and resume unavailable afterwards', async () => {
@@ -117,6 +136,8 @@ describe('session list, delete, and close', () => {
     await agent.deleteSession({ sessionId: session.sessionId });
     await agent.deleteSession({ sessionId: 'S-unknown-000000' });
     await agent.closeSession({ sessionId: 'S-unknown-000000' });
+    await expect(agent.deleteSession({ sessionId: 'not-a-session' }))
+      .rejects.toThrow('Invalid ACP session ID');
 
     expect((await agent.listSessions({})).sessions).toEqual([]);
     await expect(agent.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] }))

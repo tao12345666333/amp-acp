@@ -58,6 +58,17 @@ describe('FileThreadMappingStore', () => {
     ]);
   });
 
+  it('ignores mapping files whose names are not valid session IDs', async () => {
+    const store = new FileThreadMappingStore(stateDir);
+    await store.save({ sessionId, threadId });
+    await writeFile(
+      path.join(stateDir, 'sessions', 'not-a-session.json'),
+      JSON.stringify({ sessionId: 'not-a-session', threadId, title: 'Injected' }),
+    );
+
+    expect((await store.list()).map((mapping) => mapping.sessionId)).toEqual([sessionId]);
+  });
+
   it('returns null for a legacy session with no persisted mapping', async () => {
     const store = new FileThreadMappingStore(stateDir);
 

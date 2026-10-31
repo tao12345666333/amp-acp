@@ -33,8 +33,12 @@ export interface ThreadMappingStore {
   delete?(sessionId: string): Promise<void>;
 }
 
+export function isAcpSessionId(sessionId: string): boolean {
+  return ACP_SESSION_ID_PATTERN.test(sessionId);
+}
+
 function assertAcpSessionId(sessionId: string): void {
-  if (!ACP_SESSION_ID_PATTERN.test(sessionId)) {
+  if (!isAcpSessionId(sessionId)) {
     throw new Error(`Invalid ACP session ID: ${sessionId}`);
   }
 }
@@ -113,6 +117,7 @@ export class FileThreadMappingStore implements ThreadMappingStore {
     for (const name of names) {
       if (!name.endsWith('.json')) continue;
       const sessionId = name.slice(0, -'.json'.length);
+      if (!isAcpSessionId(sessionId)) continue;
       try {
         const contents = await readFile(path.join(this.sessionsDir, name), 'utf8');
         mappings.push(validateMapping(JSON.parse(contents), sessionId));

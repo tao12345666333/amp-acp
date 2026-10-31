@@ -46,6 +46,7 @@ import {
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import {
   FileThreadMappingStore,
+  isAcpSessionId,
   type AmpThreadMapping,
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
@@ -81,7 +82,9 @@ function encodeSessionCursor(offset: number): string {
 
 function decodeSessionCursor(cursor: string): number | null {
   try {
-    const value = Number.parseInt(Buffer.from(cursor, 'base64url').toString('utf8'), 10);
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+    if (!/^\d+$/.test(decoded)) return null;
+    const value = Number.parseInt(decoded, 10);
     return Number.isSafeInteger(value) && value >= 0 ? value : null;
   } catch {
     return null;
@@ -474,7 +477,7 @@ export class AmpAcpAgent implements Agent {
 
     if (!session) {
       const mapping = await this.threadStore.load(params.sessionId);
-      if (!mapping?.threadId) {
+      if (!mapping) {
         throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
       }
       session = this.sessionFromMapping(mapping, params);
@@ -611,7 +614,7 @@ export class AmpAcpAgent implements Agent {
 
   async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
     const mapping = await this.threadStore.load(params.sessionId);
-    if (!mapping?.threadId) {
+    if (!mapping) {
       throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
     }
     const session = this.sessionFromMapping(mapping, params);
@@ -748,6 +751,9 @@ export class AmpAcpAgent implements Agent {
   }
 
   async deleteSession(params: DeleteSessionRequest): Promise<DeleteSessionResponse> {
+    if (!isAcpSessionId(params.sessionId)) {
+      throw RequestError.invalidParams(undefined, `Invalid ACP session ID: ${params.sessionId}`);
+    }
     const session = this.sessions.get(params.sessionId);
     if (session) {
       session.deleted = true;

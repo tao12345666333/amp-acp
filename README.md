@@ -88,6 +88,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 ## Features
 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
+- **Rich tool updates** — tool calls include the tool name, start as `in_progress`, report raw output, and turn `Write`/`Edit`/`MultiEdit` inputs into ACP diffs; assistant chunks carry Amp's message ID
 - **Image support** — Sends attached PNG, JPEG, GIF, and WebP images to Amp in local and Orb sessions, and handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
 - **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
@@ -110,6 +111,14 @@ While a turn runs, amp-acp sends an ACP `usage_update` whenever the latest model
 Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. Other execution errors keep their error message instead of being reported as a refusal.
 
 When the client advertises `clientCapabilities.session.notices`, failed, denied, or registry-blocked MCP servers and Amp permission denials are sent as live `notice` updates. Clients without that capability receive the same information as an ordinary agent message so it stays visible in the transcript.
+
+### Tool call updates
+
+Tool calls are sent as ACP `tool_call` updates with the programmatic tool name, `in_progress` status, locations, raw input, and a ready-to-render summary. When the tool finishes, the matching `tool_call_update` carries the raw output unchanged, so clients can derive exit codes, command output, or file changes.
+
+`Write`, `create_file`, `Edit`, `edit_file`, and `MultiEdit` calls also include ACP `diff` content with the file path and old/new text. A new file omits `oldText`. Amp reports absolute paths for these tools, so the diff path is usable directly.
+
+Assistant, user, and thinking chunks include Amp's message ID when the stream provides one. Clients can use it to merge chunks that belong to the same message.
 
 ### Image prompts
 

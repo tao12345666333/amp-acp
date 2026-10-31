@@ -45,6 +45,7 @@ type AmpContentBlock = AmpContentText | AmpContentImage | AmpContentThinking | A
 interface AmpMessage {
   type: string;
   message?: {
+    id?: string;
     content: unknown;
   };
   session_id?: string;
@@ -59,6 +60,7 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
         update: {
           sessionUpdate: message.type === 'assistant' ? 'agent_message_chunk' : 'user_message_chunk',
           content: { type: 'text', text: content } as ContentBlock,
+          ...(message.message?.id ? { messageId: message.message.id } : {}),
         },
       },
     ];
@@ -97,12 +99,13 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
           update = {
             toolCallId: chunk.id,
             sessionUpdate: 'tool_call' as const,
+            name: chunk.name,
             rawInput: safeJson(chunk.input),
-            status: 'pending' as const,
+            status: 'in_progress' as const,
             title: metadata.title,
             kind: metadata.kind,
             locations: metadata.locations.length > 0 ? metadata.locations : undefined,
-            content: [],
+            content: toolCallDiff(chunk.name, chunk.input),
           };
         }
         break;
@@ -112,12 +115,24 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
           sessionUpdate: 'tool_call_update' as const,
           status: chunk.is_error ? ('failed' as const) : ('completed' as const),
           content: toAcpContentArray(chunk.content, chunk.is_error),
+          rawOutput: chunk.content,
         };
         break;
       default:
         break;
     }
-    if (update) output.push({ sessionId, update });
+    if (!update) continue;
+    const messageId = message.message?.id;
+    if (
+      messageId &&
+      (update.sessionUpdate === 'user_message_chunk' ||
+        update.sessionUpdate === 'agent_message_chunk' ||
+        update.sessionUpdate === 'agent_thought_chunk')
+    ) {
+      output.push({ sessionId, update: { ...update, messageId } });
+    } else {
+      output.push({ sessionId, update });
+    }
   }
   return output;
 }
@@ -137,6 +152,42 @@ function toAcpContentArray(content: string | AmpContentText[], isError = false):
 
 function wrapCode(t: string): string {
   return '```\n' + t + '\n```';
+}
+
+function toolCallDiff(name: string, input: unknown): ToolCallContent[] {
+  const args = isRecord(input) ? input : {};
+  const path = firstString(args, ['path', 'file_path']);
+  if (!path) return [];
+
+  switch (name) {
+    case 'Write':
+    case 'create_file': {
+      const newText = stringValue(args.content) ?? stringValue(args.text);
+      return newText === undefined ? [] : [{ type: 'diff', path, newText }];
+    }
+    case 'Edit':
+    case 'edit_file': {
+      const oldText = firstString(args, ['old_string', 'old_str', 'oldText']);
+      const newText = firstString(args, ['new_string', 'new_str', 'newText']);
+      return oldText === undefined || newText === undefined
+        ? []
+        : [{ type: 'diff', path, oldText, newText }];
+    }
+    case 'MultiEdit': {
+      if (!Array.isArray(args.edits)) return [];
+      const diffs: ToolCallContent[] = [];
+      for (const edit of args.edits) {
+        if (!isRecord(edit)) continue;
+        const oldText = firstString(edit, ['old_string', 'old_str', 'oldText']);
+        const newText = firstString(edit, ['new_string', 'new_str', 'newText']);
+        if (oldText === undefined || newText === undefined) continue;
+        diffs.push({ type: 'diff', path, oldText, newText });
+      }
+      return diffs;
+    }
+    default:
+      return [];
+  }
 }
 
 interface ToolCallMetadata {

@@ -454,7 +454,7 @@ describe('toAcpNotifications', () => {
       sessionUpdate: 'tool_call',
       toolCallId: 'tool-1',
       title: 'Read: /tmp/file.txt',
-      status: 'pending',
+      status: 'in_progress',
       kind: 'read',
       locations: [{ path: '/tmp/file.txt' }],
     });
@@ -476,7 +476,7 @@ describe('toAcpNotifications', () => {
       sessionUpdate: 'tool_call',
       toolCallId: 'tool-2',
       title: 'Bash: rg "tool_call" src',
-      status: 'pending',
+      status: 'in_progress',
       kind: 'execute',
     });
   });
@@ -497,7 +497,7 @@ describe('toAcpNotifications', () => {
       sessionUpdate: 'tool_call',
       toolCallId: 'tool-2b',
       title: 'Bash: uptime',
-      status: 'pending',
+      status: 'in_progress',
       kind: 'execute',
     });
   });

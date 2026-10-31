@@ -10,6 +10,7 @@
 - Stream ACP `usage_update` events for the latest model call's context usage. Set `AMP_ACP_CONTEXT_WINDOW_SIZE` to match the model's context window; the default is `200000`.
 - Map Amp `max_tokens` and `error_max_turns` to the corresponding ACP stop reasons instead of always returning `end_turn`.
 - Report failed, denied, or registry-blocked MCP servers and Amp permission denials as ACP `notice` updates when the client advertises `session.notices`, with an agent-message fallback otherwise.
+- Publish a `session_info_update` with a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn. Persist both with the session mapping and restore them on `session/load` and `session/resume`; a title exported by Amp takes precedence during load.
 
 ## 0.10.0 - 2026-10-09
 

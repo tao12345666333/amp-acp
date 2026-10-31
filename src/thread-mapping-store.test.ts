@@ -37,7 +37,17 @@ describe('FileThreadMappingStore', () => {
 
   it('round-trips persisted session settings alongside the thread mapping', async () => {
     const store = new FileThreadMappingStore(stateDir);
-    await store.save({ sessionId, threadId, mode: 'bypass', model: 'high', effort: 'xhigh', executor: 'orb', cwd: '/tmp/project' });
+    await store.save({
+      sessionId,
+      threadId,
+      mode: 'bypass',
+      model: 'high',
+      effort: 'xhigh',
+      executor: 'orb',
+      cwd: '/tmp/project',
+      title: 'Fix the login bug',
+      updatedAt: '2026-10-31T12:00:00.000Z',
+    });
 
     expect(await new FileThreadMappingStore(stateDir).load(sessionId)).toEqual({
       sessionId,
@@ -47,6 +57,8 @@ describe('FileThreadMappingStore', () => {
       effort: 'xhigh',
       executor: 'orb',
       cwd: '/tmp/project',
+      title: 'Fix the login bug',
+      updatedAt: '2026-10-31T12:00:00.000Z',
     });
   });
 
@@ -65,6 +77,9 @@ describe('FileThreadMappingStore', () => {
     const mappingPath = path.join(stateDir, 'sessions', `${sessionId}.json`);
     await writeFile(mappingPath, JSON.stringify({ sessionId, threadId, mode: 42 }));
 
+    await expect(store.load(sessionId)).rejects.toThrow('Invalid persisted mapping');
+
+    await writeFile(mappingPath, JSON.stringify({ sessionId, threadId, updatedAt: 42 }));
     await expect(store.load(sessionId)).rejects.toThrow('Invalid persisted mapping');
   });
 

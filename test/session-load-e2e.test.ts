@@ -177,7 +177,7 @@ describe('session/load across adapter restarts', () => {
 
     // Settings must have been persisted alongside the thread mapping.
     const mappingPath = path.join(stateDir, 'sessions', `${sessionId}.json`);
-    const mapping = JSON.parse(await readFile(mappingPath, 'utf8')) as Record<string, unknown>;
+    const { title, updatedAt, ...mapping } = JSON.parse(await readFile(mappingPath, 'utf8')) as Record<string, unknown>;
     expect(mapping).toEqual({
       sessionId,
       threadId: THREAD_ID,
@@ -187,6 +187,8 @@ describe('session/load across adapter restarts', () => {
       executor: 'local',
       cwd: fixtureDir,
     });
+    expect(title).toBe(MARKER);
+    expect(updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
     // Second adapter process, same state dir: load must reattach and replay.
     const second = spawnAdapter();

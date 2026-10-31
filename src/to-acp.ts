@@ -4,6 +4,7 @@ import type {
   ToolCallContent,
   ToolCallLocation,
   ToolKind,
+  PlanEntry,
 } from '@agentclientprotocol/sdk';
 
 interface AmpContentText {
@@ -51,7 +52,23 @@ interface AmpMessage {
   session_id?: string;
 }
 
-export function toAcpNotifications(message: AmpMessage, sessionId: string): SessionNotification[] {
+/** Per-session conversion state shared across a streamed turn. */
+export interface AcpConversionState {
+  /** TodoWrite tool-call IDs whose tool results should not surface separately. */
+  todoToolCallIds: Set<string>;
+  /** Signature of the last emitted plan, used to suppress identical updates. */
+  lastPlanSignature?: string;
+}
+
+export function createAcpConversionState(): AcpConversionState {
+  return { todoToolCallIds: new Set() };
+}
+
+export function toAcpNotifications(
+  message: AmpMessage,
+  sessionId: string,
+  state?: AcpConversionState,
+): SessionNotification[] {
   const content = message.message?.content;
   if (typeof content === 'string') {
     return [
@@ -95,28 +112,48 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
         break;
       case 'tool_use':
         {
-          const metadata = toolCallMetadata(chunk.name, chunk.input);
-          update = {
-            toolCallId: chunk.id,
-            sessionUpdate: 'tool_call' as const,
-            name: chunk.name,
-            rawInput: safeJson(chunk.input),
-            status: 'in_progress' as const,
-            title: metadata.title,
-            kind: metadata.kind,
-            locations: metadata.locations.length > 0 ? metadata.locations : undefined,
-            content: toolCallDiff(chunk.name, chunk.input),
-          };
+          const planEntries = chunk.name.replace(/[_\-\s]/g, '').toLowerCase() === 'todowrite'
+            ? planEntriesFromTodoInput(chunk.input)
+            : null;
+          if (planEntries !== null) {
+            state?.todoToolCallIds.add(chunk.id);
+            const signature = JSON.stringify(planEntries);
+            if (state?.lastPlanSignature !== signature) {
+              if (state) state.lastPlanSignature = signature;
+              update = {
+                sessionUpdate: 'plan' as const,
+                entries: planEntries,
+              };
+            }
+          } else {
+            const metadata = toolCallMetadata(chunk.name, chunk.input);
+            update = {
+              toolCallId: chunk.id,
+              sessionUpdate: 'tool_call' as const,
+              name: chunk.name,
+              rawInput: safeJson(chunk.input),
+              status: 'in_progress' as const,
+              title: metadata.title,
+              kind: metadata.kind,
+              locations: metadata.locations.length > 0 ? metadata.locations : undefined,
+              content: toolCallDiff(chunk.name, chunk.input),
+            };
+          }
         }
         break;
       case 'tool_result':
-        update = {
-          toolCallId: chunk.tool_use_id,
-          sessionUpdate: 'tool_call_update' as const,
-          status: chunk.is_error ? ('failed' as const) : ('completed' as const),
-          content: toAcpContentArray(chunk.content, chunk.is_error),
-          rawOutput: chunk.content,
-        };
+        if (!chunk.is_error && state?.todoToolCallIds.delete(chunk.tool_use_id)) {
+          update = null;
+        } else {
+          state?.todoToolCallIds.delete(chunk.tool_use_id);
+          update = {
+            toolCallId: chunk.tool_use_id,
+            sessionUpdate: 'tool_call_update' as const,
+            status: chunk.is_error ? ('failed' as const) : ('completed' as const),
+            content: toAcpContentArray(chunk.content, chunk.is_error),
+            rawOutput: chunk.content,
+          };
+        }
         break;
       default:
         break;
@@ -197,6 +234,24 @@ interface ToolCallMetadata {
   title: string;
   kind: ToolKind;
   locations: ToolCallLocation[];
+}
+
+function planEntriesFromTodoInput(input: unknown): PlanEntry[] | null {
+  if (!isRecord(input) || !Array.isArray(input.todos)) return null;
+  const entries: PlanEntry[] = [];
+  for (const value of input.todos) {
+    if (!isRecord(value)) continue;
+    const content = stringValue(value.content)?.trim();
+    if (!content) continue;
+    const status = value.status === 'in_progress' || value.status === 'completed'
+      ? value.status
+      : 'pending';
+    const priority = value.priority === 'high' || value.priority === 'low'
+      ? value.priority
+      : 'medium';
+    entries.push({ content, priority, status });
+  }
+  return entries;
 }
 
 function toolCallMetadata(name: string, input: unknown): ToolCallMetadata {

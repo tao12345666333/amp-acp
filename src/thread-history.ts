@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
-import { toAcpNotifications } from './to-acp.js';
+import { createAcpConversionState, toAcpNotifications, type AcpConversionState } from './to-acp.js';
 
 export interface ExportedThreadMessage {
   role: string;
@@ -110,12 +110,17 @@ export async function exportThreadMessages(
 export function historyToNotifications(
   messages: ExportedThreadMessage[],
   sessionId: string,
+  state: AcpConversionState = createAcpConversionState(),
 ): SessionNotification[] {
   const notifications: SessionNotification[] = [];
   for (const message of messages) {
     if (message.role !== 'user' && message.role !== 'assistant') continue;
     notifications.push(
-      ...toAcpNotifications({ type: message.role, message: { content: message.content } }, sessionId),
+      ...toAcpNotifications(
+        { type: message.role, message: { content: message.content } },
+        sessionId,
+        state,
+      ),
     );
   }
   return notifications;

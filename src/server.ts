@@ -32,6 +32,7 @@ import {
   type CloseSessionRequest,
   type CloseSessionResponse,
   type SessionInfo,
+  type AvailableCommand,
 } from '@agentclientprotocol/sdk';
 import {
   createAmpTransport,
@@ -143,6 +144,38 @@ const AMP_MODELS = [
     description: 'Maximum capability for the most demanding tasks.',
   },
 ] as const;
+
+/**
+ * Slash prompts supported by Amp itself, plus the adapter's own `/init`.
+ * Amp handles `ship`, `update-base`, `refactor-commits`, and `review` when the
+ * text reaches the agent; the adapter only advertises them.
+ */
+const AVAILABLE_COMMANDS: AvailableCommand[] = [
+  {
+    name: 'init',
+    description: 'Generate an AGENTS.md file for the project',
+  },
+  {
+    name: 'review',
+    description: "Review the current changes with Amp's review prompt",
+    input: { hint: 'optional focus for the review' },
+  },
+  {
+    name: 'ship',
+    description: "Commit, push, and open or update a pull request with Amp's ship prompt",
+    input: { hint: 'optional shipping instructions' },
+  },
+  {
+    name: 'update-base',
+    description: "Rebase the current branch onto its base with Amp's update-base prompt",
+    input: { hint: 'optional rebase instructions' },
+  },
+  {
+    name: 'refactor-commits',
+    description: "Restack and refactor the branch's commits with Amp's refactor-commits prompt",
+    input: { hint: 'optional refactor instructions' },
+  },
+];
 
 type PermissionMode = typeof PERMISSION_MODES[number];
 type Executor = typeof EXECUTORS[number];
@@ -484,12 +517,7 @@ export class AmpAcpAgent implements Agent {
           sessionId,
           update: {
             sessionUpdate: 'available_commands_update',
-            availableCommands: [
-              {
-                name: 'init',
-                description: 'Generate an AGENTS.md file for the project',
-              },
-            ],
+            availableCommands: AVAILABLE_COMMANDS,
           },
         });
       } catch (e) {
@@ -546,12 +574,7 @@ export class AmpAcpAgent implements Agent {
           sessionId: params.sessionId,
           update: {
             sessionUpdate: 'available_commands_update',
-            availableCommands: [
-              {
-                name: 'init',
-                description: 'Generate an AGENTS.md file for the project',
-              },
-            ],
+            availableCommands: AVAILABLE_COMMANDS,
           },
         });
       } catch (e) {
@@ -649,6 +672,19 @@ export class AmpAcpAgent implements Agent {
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
     await this.publishSessionInfo(params.sessionId, session);
+    setImmediate(async () => {
+      try {
+        await this.client.sessionUpdate({
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: 'available_commands_update',
+            availableCommands: AVAILABLE_COMMANDS,
+          },
+        });
+      } catch (e) {
+        console.error('[acp] failed to send available_commands_update', e);
+      }
+    });
     return { configOptions: buildSessionConfigOptions(session) };
   }
 

@@ -96,7 +96,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
 - **Steering extension** — clients that support `_amp/session/steer` can add a message to a running session; it is delivered as the next turn
-- **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
+- **Slash commands** — `/init` generates an `AGENTS.md`; Amp's built-in `/review`, `/ship`, `/update-base`, and `/refactor-commits` prompts are advertised and passed through unchanged
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
 - **Session metadata** — each session publishes a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn via `session_info_update`; both are persisted with the session mapping and restored on load or resume
@@ -255,6 +255,20 @@ The response is one of:
 For `startedNewTurn` and `queued`, the adapter sends `_amp/session/steer_applied` with `{sessionId, steerId}` when the message starts. If a queued steer is cancelled or its turn fails, the adapter sends `_amp/session/steer_failed` with `{sessionId, steerId, reason}`. Prompt blocks are validated before the steer is accepted, so malformed text, resource, or image entries return an invalid-params error instead of starting a turn that immediately fails.
 
 This is a next-turn extension, not live mid-turn injection. Amp's CLI keeps its process alive under `--stream-json-input` but emits no per-turn `result` message, so amp-acp still runs one process per turn and cannot safely detect a turn boundary for in-process steering. Orb execution does not support streaming input at all.
+
+### Slash commands
+
+amp-acp advertises these ACP commands through `available_commands_update`:
+
+| Command | Behavior |
+|---|---|
+| `/init` | Adapter-generated prompt that asks Amp to create or update `AGENTS.md` for the project |
+| `/review` | Amp's built-in review prompt for the current changes |
+| `/ship` | Amp's built-in ship prompt: commit, push, and open or update a pull request |
+| `/update-base` | Amp's built-in prompt to rebase the current branch onto its base |
+| `/refactor-commits` | Amp's built-in prompt to restack and refactor the branch's commits |
+
+Amp's built-ins require the text to reach the agent, so amp-acp passes `/review`, `/ship`, `/update-base`, and `/refactor-commits` through unchanged. `/init` is the only command the adapter rewrites. Text after a built-in command name is forwarded as-is, which matches Amp's own command input handling.
 
 ## MCP Configuration Passthrough
 

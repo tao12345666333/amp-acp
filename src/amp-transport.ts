@@ -84,8 +84,14 @@ export interface AmpStreamMessage {
   error?: string;
   /** Token usage, reported on `assistant` and `result` messages; shape is Amp's Claude Code-compatible usage object. */
   usage?: unknown;
+  /** MCP server connection reports from the `system` init message. */
+  mcp_servers?: unknown;
+  /** Tool calls blocked by project permissions in the `result` message. */
+  permission_denials?: unknown;
   message?: {
     content: unknown;
+    stop_reason?: unknown;
+    usage?: unknown;
   };
 }
 

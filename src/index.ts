@@ -11,6 +11,7 @@ import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { runAcp } from './run-acp.js';
+import { runAcpV2 } from './run-acp-v2.js';
 
 const AMP_CLI_NATIVE_PACKAGES: Partial<Record<NodeJS.Platform, Partial<Record<string, { pkg: string; bin: string }>>>> = {
   darwin: {
@@ -186,7 +187,12 @@ if (process.argv.includes('--setup')) {
     preferBundledAmpCliBinary();
   }
 
-  runAcp();
+  if (process.env.AMP_ACP_PROTOCOL?.toLowerCase() === 'v2') {
+    console.error('[acp] experimental ACP v2 adapter enabled');
+    runAcpV2();
+  } else {
+    runAcp();
+  }
 
   process.stdin.resume();
 }

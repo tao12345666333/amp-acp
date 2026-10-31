@@ -291,6 +291,24 @@ amp-acp advertises these ACP commands through `available_commands_update`:
 
 Amp's built-ins require the text to reach the agent, so amp-acp passes `/review`, `/ship`, `/update-base`, and `/refactor-commits` through unchanged. `/init` is the only command the adapter rewrites. Text after a built-in command name is forwarded as-is, which matches Amp's own command input handling.
 
+### Experimental ACP v2
+
+Set `AMP_ACP_PROTOCOL=v2` to serve the experimental ACP v2 draft instead of v1:
+
+```sh
+AMP_ACP_PROTOCOL=v2 amp-acp
+```
+
+The v2 adapter keeps the existing session, model, queue, and Amp transport behavior, and translates between the two protocol shapes:
+
+- `initialize` returns `protocolVersion: 2`, `info`, and v2 session capabilities.
+- `session/prompt` returns `messageId` immediately and reports the background turn through `state_update` (`running` then `idle`).
+- Client config options are exposed as v2 `configId` fields.
+- v1 `plan` updates become v2 `plan_update`; v1 `tool_call` updates become v2 `tool_call_update`.
+- `session/resume`, `session/close`, and `session/set_config_option` forward to the existing implementation. `session/list` currently returns an empty list.
+
+v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity.
+
 ## MCP Configuration Passthrough
 
 MCP servers configured in Zed's `context_servers` are automatically forwarded to Amp. This is compatible with how other ACP agents like [Claude Code](https://github.com/zed-industries/claude-code-acp) and [Codex](https://github.com/zed-industries/codex-acp) handle MCP servers.

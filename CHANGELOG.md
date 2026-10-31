@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-11-01
+
 ### Added
 
 - Add a `reasoning-effort` ACP config option for local CLI sessions with `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the selection to Amp as the `--features effort:<value>` thread feature and persists it across `session/load` and `session/resume`.
@@ -15,8 +17,31 @@
 - Send richer tool updates: tool names, `in_progress` status, raw output, file diffs for edit and write tools, and Amp message IDs on content chunks.
 - Convert Amp todo tool calls into ACP `plan` updates with the complete todo list, status and priority mapping, duplicate suppression, and no stray todo tool result.
 - Add the `_amp/session/steer` extension for steering a running local session as the next queued turn, with `_amp/session/steer_applied` and `_amp/session/steer_failed` notifications and explicit `failed` outcomes for Orb sessions.
-- Keep one local CLI process per ACP session, and with `AMP_ACP_CANCEL_MODE=steer`, deliver the first prompt after cancellation using Amp's `steer` marker instead of queuing it as ordinary input. Configuration changes now restart the idle local process so the next turn uses the new settings.
+- Add native cancel-then-prompt steering for local CLI sessions. With `AMP_ACP_CANCEL_MODE=steer`, the adapter keeps the Amp input stream alive and writes the first prompt after cancellation with Amp's `steer` marker instead of treating it as ordinary queued input.
 - Advertise Amp's built-in `/review`, `/ship`, `/update-base`, and `/refactor-commits` slash prompts alongside `/init`, and pass them through to the agent unchanged.
+- Preserve ACP image prompts in local and Orb sessions. Local image turns use ordered text/image blocks over `--stream-json-input`; Orb turns upload private temporary files with `--attach` and remove them after success, failure, or cancellation. Images are no longer accepted and then silently dropped.
+- Advertise a standard ACP terminal authentication method to clients that declare `clientCapabilities.auth.terminal`, while retaining the legacy terminal-auth metadata for other clients.
+
+### Changed
+
+- Local CLI sessions now keep one Amp process per ACP session and reset that process after an idle configuration change, so the next turn uses the new settings. Orb sessions continue to use the `@ampcode/sdk` transport.
+- Session mappings now retain reasoning effort, title, and `updatedAt` alongside the existing permission mode, Amp mode, execution environment, and thread ID. `session/load` and `session/resume` restore them.
+- Configuration changes made while a turn is active are rejected instead of silently applying to the wrong process.
+
+### Compatibility
+
+- ACP v1 remains the default and only protocol enabled by this release. The experimental ACP v2 bridge is not part of 0.11.0.
+- Existing ACP clients continue to work without configuration changes; all new behavior is either additive or opt-in through an environment variable.
+- Orb sessions continue to use the SDK transport and follow the mode's routing instead of the local reasoning-effort option.
+- `AMP_ACP_CANCEL_MODE=steer` is opt-in. Without it, cancellation keeps the standard ACP behavior of terminating the local Amp process.
+
+### Verification
+
+- `bun run lint`
+- `bun run build`
+- `bun test src/` — 210 pass, 0 fail
+- `bun run test:binary` — 15 pass, 3 skipped, 0 fail
+- Manual ACP smoke tests with T3 Code (Beta), Zed, and Lody against a real Amp CLI. Native steering was verified by sending a long-running prompt, cancelling it, and observing the replacement prompt reach Amp with `steer: true`.
 
 ## 0.10.0 - 2026-10-09
 

@@ -53,6 +53,8 @@ const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
 const CONFIG_EXECUTOR = 'execution-environment';
 const CONFIG_REASONING_EFFORT = 'reasoning-effort';
+/** Maximum number of prompts accepted behind the active turn for one session. */
+const MAX_QUEUED_PROMPTS = 32;
 const PERMISSION_MODES = ['default', 'bypass'] as const;
 const EXECUTORS = ['local', 'orb'] as const;
 const REASONING_EFFORTS = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -234,11 +236,21 @@ function buildSessionConfigOptions(
   ];
 }
 
+interface ActiveTurn {
+  controller: AbortController;
+  cancelled: boolean;
+}
+
+interface QueuedPrompt {
+  params: PromptRequest;
+  resolve: (response: PromptResponse) => void;
+  reject: (error: unknown) => void;
+}
+
 interface SessionState {
   threadId: string | null;
-  controller: AbortController | null;
-  cancelled: boolean;
-  active: boolean;
+  active: ActiveTurn | null;
+  queue: QueuedPrompt[];
   mode: PermissionMode;
   model: string;
   models: AmpModel[];
@@ -353,9 +365,8 @@ export class AmpAcpAgent implements Agent {
 
     const session: SessionState = {
       threadId: null,
-      controller: null,
-      cancelled: false,
-      active: false,
+      active: null,
+      queue: [],
       mode: 'default',
       model: 'medium',
       models: buildAmpModels(this.discoverPluginModes(cwd)),
@@ -457,9 +468,8 @@ export class AmpAcpAgent implements Agent {
     const models = buildAmpModels(this.discoverPluginModes(cwd));
     return {
       threadId: mapping.threadId,
-      controller: null,
-      cancelled: false,
-      active: false,
+      active: null,
+      queue: [],
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
       // Keep the persisted Amp mode even when discovery does not currently
       // list it (e.g. its plugin is temporarily unloaded); Amp is the
@@ -515,9 +525,47 @@ export class AmpAcpAgent implements Agent {
   async prompt(params: PromptRequest): Promise<PromptResponse> {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
-    s.cancelled = false;
-    s.active = true;
+    if (s.active || s.queue.length > 0) {
+      return this.enqueuePrompt(params, s);
+    }
+    return this.startPrompt(params, s);
+  }
 
+  private enqueuePrompt(params: PromptRequest, s: SessionState): Promise<PromptResponse> {
+    if (s.queue.length >= MAX_QUEUED_PROMPTS) {
+      return Promise.reject(RequestError.invalidParams(
+        undefined,
+        `Prompt queue is full (max ${MAX_QUEUED_PROMPTS} pending prompts)`,
+      ));
+    }
+    return new Promise<PromptResponse>((resolve, reject) => {
+      s.queue.push({ params, resolve, reject });
+    });
+  }
+
+  private startPrompt(params: PromptRequest, s: SessionState): Promise<PromptResponse> {
+    const turn: ActiveTurn = { controller: new AbortController(), cancelled: false };
+    s.active = turn;
+    return this.executePrompt(params, s, turn).finally(() => {
+      if (s.active === turn) s.active = null;
+      // Let the current prompt response reach the client before starting the
+      // next queued turn.
+      setImmediate(() => this.startNextQueuedPrompt(s));
+    });
+  }
+
+  private startNextQueuedPrompt(s: SessionState): void {
+    if (s.active) return;
+    const next = s.queue.shift();
+    if (!next) return;
+    void this.startPrompt(next.params, s).then(next.resolve, next.reject);
+  }
+
+  private async executePrompt(
+    params: PromptRequest,
+    s: SessionState,
+    turn: ActiveTurn,
+  ): Promise<PromptResponse> {
     let textInput = '';
     for (const chunk of params.prompt) {
       switch (chunk.type) {
@@ -586,12 +634,10 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       console.error('[acp] AMP_ACP_CONTINUE_LATEST set; continuing latest thread on this installation');
     }
 
-    const controller = new AbortController();
-    s.controller = controller;
     const turnUsage = new TurnUsage();
 
     try {
-      for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
+      for await (const message of transport.execute({ prompt: textInput, options, signal: turn.controller.signal })) {
         turnUsage.add(message);
         if (message.session_id) {
           if (!isAmpThreadId(message.session_id)) {
@@ -630,9 +676,9 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
 
       const usage = turnUsage.toAcp();
-      return { stopReason: s.cancelled ? 'cancelled' : 'end_turn', ...(usage ? { usage } : {}) };
+      return { stopReason: turn.cancelled ? 'cancelled' : 'end_turn', ...(usage ? { usage } : {}) };
     } catch (err) {
-      if (s.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
+      if (turn.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };
       }
       if (err instanceof Error && isAuthError(err.message)) {
@@ -641,19 +687,21 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
       console.error('[amp] Execution error:', err);
       throw err;
-    } finally {
-      s.active = false;
-      s.cancelled = false;
-      s.controller = null;
     }
   }
 
   async cancel(params: CancelNotification): Promise<void> {
     const s = this.sessions.get(params.sessionId);
     if (!s) return;
-    if (s.active && s.controller) {
-      s.cancelled = true;
-      s.controller.abort();
+
+    if (s.active) {
+      s.active.cancelled = true;
+      s.active.controller.abort();
+    }
+
+    const queued = s.queue.splice(0);
+    for (const entry of queued) {
+      entry.resolve({ stopReason: 'cancelled' });
     }
   }
 

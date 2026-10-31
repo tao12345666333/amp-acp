@@ -98,27 +98,33 @@ describe('ACP client to compiled amp-acp binary', () => {
             cwd: fixtureDir,
             mcpServers: [],
           });
-          const first = await agent.request(methods.agent.session.prompt, {
+          const first = agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'first prompt' }],
           });
-          const second = await agent.request(methods.agent.session.prompt, {
+          const second = agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'second prompt' }],
           });
+          const [firstResponse, secondResponse] = await Promise.all([first, second]);
 
           const cancelledPrompt = agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'cancel me' }],
+          });
+          const queuedCancelledPrompt = agent.request(methods.agent.session.prompt, {
+            sessionId: session.sessionId,
+            prompt: [{ type: 'text', text: 'queued cancel' }],
           });
           await new Promise((resolve) => setTimeout(resolve, 100));
           await agent.notify(methods.agent.session.cancel, { sessionId: session.sessionId });
 
           return {
             initialized,
-            first,
-            second,
+            first: firstResponse,
+            second: secondResponse,
             cancelled: await cancelledPrompt,
+            queuedCancelled: await queuedCancelledPrompt,
           };
         });
 
@@ -126,6 +132,7 @@ describe('ACP client to compiled amp-acp binary', () => {
       expect(result.first.stopReason).toBe('end_turn');
       expect(result.second.stopReason).toBe('end_turn');
       expect(result.cancelled.stopReason).toBe('cancelled');
+      expect(result.queuedCancelled.stopReason).toBe('cancelled');
 
       const sessionUpdates = updates.map((notification) => notification.update);
       expect(sessionUpdates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_thought_chunk' }));
@@ -146,6 +153,22 @@ describe('ACP client to compiled amp-acp binary', () => {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'reply:second prompt;continued:true' },
       }));
+
+      // The second concurrent prompt must be queued until the first completes.
+      const firstReplyIndex = sessionUpdates.findIndex(
+        (update) => update.sessionUpdate === 'agent_message_chunk'
+          && 'content' in update
+          && update.content.type === 'text'
+          && update.content.text === 'reply:first prompt;continued:false',
+      );
+      const secondReplyIndex = sessionUpdates.findIndex(
+        (update) => update.sessionUpdate === 'agent_message_chunk'
+          && 'content' in update
+          && update.content.type === 'text'
+          && update.content.text === 'reply:second prompt;continued:true',
+      );
+      expect(firstReplyIndex).toBeGreaterThanOrEqual(0);
+      expect(secondReplyIndex).toBeGreaterThan(firstReplyIndex);
     } catch (error) {
       const logs = Buffer.concat(stderr).toString().trim();
       throw new Error(`${error instanceof Error ? error.message : String(error)}${logs ? `\namp-acp stderr:\n${logs}` : ''}`);

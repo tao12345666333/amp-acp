@@ -91,6 +91,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
 - **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
+- **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -169,6 +170,19 @@ The ACP config option **Reasoning Effort** selects how much reasoning Amp perfor
 Supported values are `auto` (omit the feature and use Amp's default), `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the value as the `--features effort:<value>` thread feature to the CLI transport. The Amp SDK transport used for Orb execution has no equivalent option, so Orb sessions follow the mode's routing; tune effort for Orb threads with the Amp project's mode settings. The selection is persisted with the session mapping and restored by `session/load` and `session/resume`.
 
 Amp thinking blocks are included in the stream by default (`--stream-json-thinking` or SDK `thinking: true`) and forwarded as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to use plain `--stream-json` output.
+
+### Prompt queue and cancellation
+
+ACP v1 describes `session/prompt` as a long-running request, so most clients wait for the response before sending the next prompt. Some clients can send a follow-up while a turn is still running. amp-acp serializes prompts per session:
+
+- The first prompt starts immediately.
+- Up to 32 follow-up prompts are queued in arrival order.
+- When the active turn finishes, the next queued prompt starts and continues the same Amp thread.
+- `session/cancel` aborts the active turn and resolves every queued prompt with `stopReason: "cancelled"` without starting them.
+- A prompt sent after cancellation starts a new turn.
+- A 33rd pending prompt is rejected with an invalid-params error instead of growing memory without bound.
+
+The queue is internal to amp-acp and requires no new ACP capability. ACP v2 has native prompt queueing and steering; this is the v1 compatibility path.
 
 ## MCP Configuration Passthrough
 

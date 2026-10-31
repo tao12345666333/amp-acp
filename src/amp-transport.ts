@@ -26,10 +26,21 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
  */
 export type AmpMode = 'low' | 'medium' | 'high' | 'ultra' | (string & {});
 
+/**
+ * Amp reasoning effort. Effort is separate from `--mode`: mode selects the
+ * model/routing tier, effort selects how much reasoning the model performs.
+ * The Amp CLI accepts it as the `--features effort:<level>` thread feature;
+ * there is no standalone `--effort` flag.
+ */
+export type AmpEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
   mode?: AmpMode;
+  effort?: AmpEffort;
+  /** Include Amp thinking blocks in the stream (`--stream-json-thinking`). */
+  thinking?: boolean;
   executor?: 'local' | 'orb';
   project?: string;
   dangerouslyAllowAll?: boolean;
@@ -133,6 +144,11 @@ export function buildAmpSdkOptions(options: AmpExecutionOptions): AmpOptions {
     cwd: options.cwd,
     env: options.env,
     mode: options.mode,
+    // `effort` is intentionally omitted: the Amp SDK maps it to a bare
+    // `--effort` flag, which current Amp CLI releases reject. Effort is a
+    // thread feature on the CLI transport (`--features effort:<level>`); the
+    // SDK transport (Orb) follows the mode's routing instead.
+    ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
     executor: options.executor,
     project: options.project,
     noArchiveAfterExecute: true,
@@ -151,8 +167,13 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
     args.push('threads', 'continue', '--last');
   }
 
-  args.push('--execute', '--stream-json', '--no-archive-after-execute');
+  args.push(
+    '--execute',
+    options.thinking ? '--stream-json-thinking' : '--stream-json',
+    '--no-archive-after-execute',
+  );
   if (options.mode) args.push('--mode', options.mode);
+  if (options.effort) args.push('--features', `effort:${options.effort}`);
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));
 

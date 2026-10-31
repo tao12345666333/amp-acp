@@ -73,13 +73,19 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.sessionId).toMatch(/^S-/);
     expect(response.models).toBeUndefined();
     expect(response.modes).toBeUndefined();
-    expect(response.configOptions).toHaveLength(3);
+    expect(response.configOptions).toHaveLength(4);
     expect(response.configOptions?.map((option) => option.id)).toEqual([
       'execution-environment',
       'permission',
       'amp-mode',
+      'reasoning-effort',
     ]);
-    expect(response.configOptions?.map((option) => option.category)).toEqual(['mode', 'mode', 'model']);
+    expect(response.configOptions?.map((option) => option.category)).toEqual([
+      'mode',
+      'mode',
+      'model',
+      'thought_level',
+    ]);
     expect(response.configOptions?.find((option) => option.id === 'execution-environment')).toMatchObject({
       currentValue: 'local',
       options: [
@@ -118,10 +124,43 @@ describe('ACP Protocol End-to-End', () => {
       value: 'high',
     });
 
-    expect(result.configOptions).toHaveLength(3);
+    expect(result.configOptions).toHaveLength(4);
     expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
       currentValue: 'high',
     });
+  });
+
+  it('should set reasoning effort and reject unknown values', async () => {
+    const session = await agentConnection.newSession({
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+
+    const result = await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'xhigh',
+    });
+
+    expect(result.configOptions.find((option) => option.id === 'reasoning-effort')).toMatchObject({
+      currentValue: 'xhigh',
+      options: [
+        { value: 'auto', name: 'Auto' },
+        { value: 'none', name: 'None' },
+        { value: 'minimal', name: 'Minimal' },
+        { value: 'low', name: 'Low' },
+        { value: 'medium', name: 'Medium' },
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'Extra high' },
+        { value: 'max', name: 'Max' },
+      ],
+    });
+
+    await expect(agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'turbo',
+    })).rejects.toThrow('Internal error');
   });
 
   it('should update the execution environment', async () => {

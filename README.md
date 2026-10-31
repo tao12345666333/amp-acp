@@ -88,7 +88,9 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 - **Streaming responses** — Amp messages, tool calls, and thinking are streamed in real-time via ACP
 - **Image support** — Handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), and select the current Amp mode via ACP config options: the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
+- **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
+- **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -99,7 +101,7 @@ Run `amp login` before starting amp-acp. The adapter and CLI share the same Amp 
 
 Amp's streamed `session_id` is a durable `T-...` thread ID, distinct from amp-acp's `S-...` ACP session ID. amp-acp persists that exact mapping under `$XDG_STATE_HOME/amp-acp/sessions` (or `$AMP_ACP_STATE_DIR/sessions`) so `session/resume`, `session/load`, and native archival remain safe after adapter restarts. It never reconstructs the relationship from a working directory, title, timestamp, or thread listing.
 
-Mappings are small JSON records written atomically to an owner-only state directory (`0700`) with owner-only files (`0600`). They contain the ACP session ID, Amp thread ID, and the session's permission mode, Amp mode, and working directory — never prompts, responses, or credentials.
+Mappings are small JSON records written atomically to an owner-only state directory (`0700`) with owner-only files (`0600`). They contain the ACP session ID, Amp thread ID, and the session's permission mode, Amp mode, reasoning effort, and working directory — never prompts, responses, or credentials.
 
 Compatible ACP clients can detect protocol revision 1 at `agentCapabilities._meta["amp-acp/thread-lifecycle"]` and use these custom methods:
 
@@ -159,6 +161,14 @@ Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory.
 The `amp plugins list` result is cached for 60 seconds per working directory, so a mode plugin installed while amp-acp is running appears in the selector of new sessions within about a minute, without an adapter restart.
 
 The selector lists the discovered modes, but the adapter accepts any non-empty mode value and passes it through to Amp unchanged. Amp is the authority on mode resolution: it matches mode keys case-insensitively and rejects unknown modes when the prompt runs. This keeps amp-acp forward-compatible as Amp adds modes — including a mode plugin installed moments ago, before discovery picks it up. Likewise, a session restored via `session/load` or `session/resume` keeps its persisted mode even when the mode's plugin is temporarily unloaded; the value stays visible and selected in the option list.
+
+### Reasoning effort
+
+The ACP config option **Reasoning Effort** selects how much reasoning Amp performs for the current mode. It is independent of the Amp mode: mode chooses the model/routing tier, effort chooses the reasoning depth.
+
+Supported values are `auto` (omit the feature and use Amp's default), `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the value as the `--features effort:<value>` thread feature to the CLI transport. The Amp SDK transport used for Orb execution has no equivalent option, so Orb sessions follow the mode's routing; tune effort for Orb threads with the Amp project's mode settings. The selection is persisted with the session mapping and restored by `session/load` and `session/resume`.
+
+Amp thinking blocks are included in the stream by default (`--stream-json-thinking` or SDK `thinking: true`) and forwarded as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to use plain `--stream-json` output.
 
 ## MCP Configuration Passthrough
 

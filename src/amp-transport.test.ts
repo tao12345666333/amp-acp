@@ -151,6 +151,35 @@ process.exit(3);
     }
   });
 
+  it('passes reasoning effort as a CLI thread feature and streams thinking', () => {
+    expect(buildAmpCliArgs({
+      ...baseOptions,
+      effort: 'high',
+      thinking: true,
+    })).toEqual([
+      '--execute',
+      '--stream-json-thinking',
+      '--no-archive-after-execute',
+      '--mode',
+      'medium',
+      '--features',
+      'effort:high',
+    ]);
+    expect(buildAmpSdkOptions({
+      ...baseOptions,
+      effort: 'xhigh',
+      thinking: true,
+    })).toMatchObject({
+      thinking: true,
+      noArchiveAfterExecute: true,
+    });
+    // The SDK's `--effort` flag is not accepted by current Amp CLI releases.
+    expect(buildAmpSdkOptions({
+      ...baseOptions,
+      effort: 'xhigh',
+    })).not.toHaveProperty('effort');
+  });
+
   it('passes custom plugin agent modes through to the CLI and SDK', () => {
     expect(buildAmpCliArgs({ ...baseOptions, mode: 'acp-flash' })).toEqual([
       '--execute',

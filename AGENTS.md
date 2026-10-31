@@ -16,7 +16,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs (including SDK transport fallback)
 - `src/thread-mapping-store.ts` — Persists durable ACP-session-to-Amp-thread mappings, session settings, title, and last-updated timestamp; lists and deletes records for session lifecycle operations
 - `src/thread-history.ts` — Exports Amp thread messages, title, and timestamp for `session/load` replay and metadata recovery
-- `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications
+- `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications, including tool call names, raw output, file diffs, and message IDs
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
 - `src/plugin-modes.ts` — Discovers agent modes from Amp plugins (`// @amp-agent-mode` comments in project/system plugin files, plus `amp plugins list` for Personal/Workspace plugins, cached 60s per cwd). Unknown but non-empty mode values pass through to Amp unchanged
 - `src/turn-usage.ts` — Aggregates a turn's token usage from Amp stream messages (last report wins per response id) for `PromptResponse.usage`, and exposes the latest model call's context total for `usage_update`

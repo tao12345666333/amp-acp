@@ -45,6 +45,7 @@ type AmpContentBlock = AmpContentText | AmpContentImage | AmpContentThinking | A
 interface AmpMessage {
   type: string;
   message?: {
+    id?: string;
     content: unknown;
   };
   session_id?: string;
@@ -59,6 +60,7 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
         update: {
           sessionUpdate: message.type === 'assistant' ? 'agent_message_chunk' : 'user_message_chunk',
           content: { type: 'text', text: content } as ContentBlock,
+          ...(message.message?.id ? { messageId: message.message.id } : {}),
         },
       },
     ];
@@ -97,12 +99,13 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
           update = {
             toolCallId: chunk.id,
             sessionUpdate: 'tool_call' as const,
+            name: chunk.name,
             rawInput: safeJson(chunk.input),
-            status: 'pending' as const,
+            status: 'in_progress' as const,
             title: metadata.title,
             kind: metadata.kind,
             locations: metadata.locations.length > 0 ? metadata.locations : undefined,
-            content: [],
+            content: toolCallDiff(chunk.name, chunk.input),
           };
         }
         break;
@@ -112,12 +115,24 @@ export function toAcpNotifications(message: AmpMessage, sessionId: string): Sess
           sessionUpdate: 'tool_call_update' as const,
           status: chunk.is_error ? ('failed' as const) : ('completed' as const),
           content: toAcpContentArray(chunk.content, chunk.is_error),
+          rawOutput: chunk.content,
         };
         break;
       default:
         break;
     }
-    if (update) output.push({ sessionId, update });
+    if (!update) continue;
+    const messageId = message.message?.id;
+    if (
+      messageId &&
+      (update.sessionUpdate === 'user_message_chunk' ||
+        update.sessionUpdate === 'agent_message_chunk' ||
+        update.sessionUpdate === 'agent_thought_chunk')
+    ) {
+      output.push({ sessionId, update: { ...update, messageId } });
+    } else {
+      output.push({ sessionId, update });
+    }
   }
   return output;
 }
@@ -137,6 +152,45 @@ function toAcpContentArray(content: string | AmpContentText[], isError = false):
 
 function wrapCode(t: string): string {
   return '```\n' + t + '\n```';
+}
+
+function toolCallDiff(name: string, input: unknown): ToolCallContent[] {
+  const args = isRecord(input) ? input : {};
+  const path = firstString(args, ['path', 'file_path']);
+  if (!path) return [];
+
+  switch (name) {
+    case 'Write':
+    case 'create_file': {
+      const newText = optionalString(args.content) ?? optionalString(args.text);
+      return newText === undefined ? [] : [{ type: 'diff', path, newText }];
+    }
+    case 'Edit':
+    case 'edit_file': {
+      const oldText = firstOptionalString(args, ['old_string', 'old_str', 'oldText']);
+      const newText = firstOptionalString(args, ['new_string', 'new_str', 'newText']);
+      if (newText === undefined) return [];
+      return [oldText === undefined
+        ? { type: 'diff', path, newText }
+        : { type: 'diff', path, oldText, newText }];
+    }
+    case 'MultiEdit': {
+      if (!Array.isArray(args.edits)) return [];
+      const diffs: ToolCallContent[] = [];
+      for (const edit of args.edits) {
+        if (!isRecord(edit)) continue;
+        const oldText = firstOptionalString(edit, ['old_string', 'old_str', 'oldText']);
+        const newText = firstOptionalString(edit, ['new_string', 'new_str', 'newText']);
+        if (newText === undefined) continue;
+        diffs.push(oldText === undefined
+          ? { type: 'diff', path, newText }
+          : { type: 'diff', path, oldText, newText });
+      }
+      return diffs;
+    }
+    default:
+      return [];
+  }
 }
 
 interface ToolCallMetadata {
@@ -165,16 +219,20 @@ function toolCallTitle(name: string, input: Record<string, unknown>): string {
 
   switch (name) {
     case 'Bash':
+    case 'shell_command':
+    case 'code_exec':
       return withDetail(name, command);
     case 'Read':
-      return withDetail(name, path);
+    case 'read_file':
     case 'Write':
-      return withDetail(name, path);
+    case 'create_file':
     case 'Edit':
+    case 'edit_file':
     case 'MultiEdit':
+    case 'delete_file':
+    case 'apply_patch':
       return withDetail(name, path);
     case 'Glob':
-      return withDetail(name, pattern ?? path);
     case 'Grep':
       return withDetail(name, pattern ?? path);
     case 'LS':
@@ -182,6 +240,7 @@ function toolCallTitle(name: string, input: Record<string, unknown>): string {
     case 'WebFetch':
       return withDetail(name, url);
     case 'TodoWrite':
+    case 'todo_write':
       return 'Update todo list';
     case 'Task':
       return withDetail(name, stringValue(input.description) ?? stringValue(input.subagent_type));
@@ -225,20 +284,28 @@ function nestedCommandValue(value: unknown, depth: number): string | undefined {
 function toolKind(name: string): ToolKind {
   switch (name) {
     case 'Read':
+    case 'read_file':
     case 'LS':
       return 'read';
     case 'Write':
+    case 'create_file':
     case 'Edit':
+    case 'edit_file':
     case 'MultiEdit':
+    case 'delete_file':
+    case 'apply_patch':
       return 'edit';
     case 'Glob':
     case 'Grep':
       return 'search';
     case 'Bash':
+    case 'shell_command':
+    case 'code_exec':
       return 'execute';
     case 'WebFetch':
       return 'fetch';
     case 'TodoWrite':
+    case 'todo_write':
     case 'Task':
       return 'think';
     default:
@@ -252,9 +319,14 @@ function toolCallLocations(name: string, input: Record<string, unknown>): ToolCa
 
   switch (name) {
     case 'Read':
+    case 'read_file':
     case 'Write':
+    case 'create_file':
     case 'Edit':
+    case 'edit_file':
     case 'MultiEdit':
+    case 'delete_file':
+    case 'apply_patch':
     case 'LS':
     case 'Grep':
     case 'Glob': {
@@ -277,6 +349,18 @@ function firstString(input: Record<string, unknown>, keys: string[]): string | u
     if (value) return value;
   }
   return undefined;
+}
+
+function firstOptionalString(input: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = optionalString(input[key]);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function firstScalarString(input: Record<string, unknown>): string | undefined {

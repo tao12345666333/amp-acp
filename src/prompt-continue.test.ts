@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
+import type { AmpExecutionOptions, AmpTransport } from './amp-transport.js';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
 const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
@@ -113,6 +114,83 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.dangerouslyAllowAll).toBe(true);
+  });
+
+  it('streams thinking to the SDK and leaves effort to CLI thread features', async () => {
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'high',
+    });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(capturedCalls).toHaveLength(1);
+    // The SDK maps effort to `--effort`, which current Amp CLI releases reject.
+    expect(capturedCalls[0]!.options.effort).toBeUndefined();
+    expect(capturedCalls[0]!.options.thinking).toBe(true);
+  });
+
+  it('passes reasoning effort to a CLI transport', async () => {
+    const calls: AmpExecutionOptions[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute({ options }) {
+        calls.push(options);
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    const cliAgent = new AmpAcpAgent(mockClient, transport, {
+      threadStore: {
+        load: async (sessionId) => mappings.get(sessionId) ?? null,
+        save: async (mapping) => {
+          mappings.set(mapping.sessionId, mapping);
+        },
+      },
+      discoverPluginModes: () => [],
+    });
+    await cliAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const session = await cliAgent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await cliAgent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'xhigh',
+    });
+    await cliAgent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.effort).toBe('xhigh');
+    expect(calls[0]!.thinking).toBe(true);
+  });
+
+  it('omits effort when auto is selected and can disable thinking', async () => {
+    const saved = process.env.AMP_ACP_DISABLE_THINKING;
+    process.env.AMP_ACP_DISABLE_THINKING = '1';
+    try {
+      const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+      await agent.prompt({
+        sessionId: session.sessionId,
+        prompt: [{ type: 'text', text: 'hello' }],
+      });
+
+      expect(capturedCalls).toHaveLength(1);
+      expect(capturedCalls[0]!.options.effort).toBeUndefined();
+      expect(capturedCalls[0]!.options.thinking).toBe(false);
+    } finally {
+      if (saved === undefined) {
+        delete process.env.AMP_ACP_DISABLE_THINKING;
+      } else {
+        process.env.AMP_ACP_DISABLE_THINKING = saved;
+      }
+    }
   });
 
   it('uses the SDK for Orb execution and omits local-only options', async () => {

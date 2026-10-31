@@ -101,7 +101,7 @@ describe('AmpAcpAgent session/load', () => {
     expect(capturedCalls[1]!.options.continue).toBe('T-01234567-89ab-cdef-0123-456789abcdef');
   });
 
-  it('restores persisted permission mode, Amp mode, and execution environment', async () => {
+  it('restores persisted permission mode, Amp mode, reasoning effort, and execution environment', async () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -121,6 +121,11 @@ describe('AmpAcpAgent session/load', () => {
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'xhigh',
+    });
+    await first.setSessionConfigOption({
+      sessionId: session.sessionId,
       configId: 'execution-environment',
       value: 'orb',
     });
@@ -136,6 +141,7 @@ describe('AmpAcpAgent session/load', () => {
     const byId = new Map(loaded.configOptions?.map((option) => [option.id, option]));
     expect(byId.get('amp-mode')?.currentValue).toBe('high');
     expect(byId.get('permission')?.currentValue).toBe('bypass');
+    expect(byId.get('reasoning-effort')?.currentValue).toBe('xhigh');
     expect(byId.get('execution-environment')?.currentValue).toBe('orb');
 
     await second.prompt({
@@ -144,7 +150,10 @@ describe('AmpAcpAgent session/load', () => {
     });
     const lastCall = capturedCalls.at(-1)!;
     expect(lastCall.options.mode).toBe('high');
+    expect(lastCall.options.thinking).toBe(true);
     expect(lastCall.options.executor).toBe('orb');
+    // Orb uses the SDK transport, which does not expose CLI thread features.
+    expect(lastCall.options.effort).toBeUndefined();
     // Local-only options stay off Orb prompts even though bypass was persisted.
     expect(lastCall.options.dangerouslyAllowAll).toBeUndefined();
   });

@@ -30,6 +30,7 @@ import {
   createAmpTransport,
   isAmpThreadId,
   setAmpThreadArchived,
+  type AmpEffort,
   type AmpExecutionOptions,
   type AmpThreadLifecycleOptions,
   type AmpTransport,
@@ -51,8 +52,11 @@ const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
 const CONFIG_AMP_MODE = 'amp-mode';
 const CONFIG_EXECUTOR = 'execution-environment';
+const CONFIG_REASONING_EFFORT = 'reasoning-effort';
 const PERMISSION_MODES = ['default', 'bypass'] as const;
 const EXECUTORS = ['local', 'orb'] as const;
+const REASONING_EFFORTS = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+type ReasoningEffort = typeof REASONING_EFFORTS[number];
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
 const NATIVE_METADATA_METHOD = 'amp-acp/session/native-metadata';
 const SET_ARCHIVED_METHOD = 'amp-acp/thread/set-archived';
@@ -123,7 +127,35 @@ function isExecutor(executor: string): executor is Executor {
   return EXECUTORS.some((candidate) => candidate === executor);
 }
 
-function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor'>): SessionConfigOption[] {
+function isReasoningEffort(effort: string): effort is ReasoningEffort {
+  return REASONING_EFFORTS.some((candidate) => candidate === effort);
+}
+
+const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  auto: 'Auto',
+  none: 'None',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+};
+
+const REASONING_EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
+  auto: "Use Amp's default effort for the selected mode.",
+  none: 'Do not request additional reasoning.',
+  minimal: 'Minimal reasoning for the fastest responses.',
+  low: 'Light reasoning for straightforward tasks.',
+  medium: 'Balanced reasoning for everyday coding tasks.',
+  high: 'More reasoning for difficult problems.',
+  xhigh: 'Extra-high reasoning for complex work.',
+  max: 'Maximum reasoning effort.',
+};
+
+function buildSessionConfigOptions(
+  s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor' | 'effort'>,
+): SessionConfigOption[] {
   const ampModeOptions = s.models.map((model) => ({
     value: model.modelId,
     name: model.name,
@@ -186,6 +218,19 @@ function buildSessionConfigOptions(s: Pick<SessionState, 'mode' | 'model' | 'mod
       currentValue: s.model,
       options: ampModeOptions,
     },
+    {
+      type: 'select',
+      id: CONFIG_REASONING_EFFORT,
+      name: 'Reasoning Effort',
+      description: 'How much reasoning Amp should apply to local CLI turns for the selected mode.',
+      category: 'thought_level',
+      currentValue: s.effort,
+      options: REASONING_EFFORTS.map((effort) => ({
+        value: effort,
+        name: REASONING_EFFORT_LABELS[effort],
+        description: REASONING_EFFORT_DESCRIPTIONS[effort],
+      })),
+    },
   ];
 }
 
@@ -197,6 +242,7 @@ interface SessionState {
   mode: PermissionMode;
   model: string;
   models: AmpModel[];
+  effort: ReasoningEffort;
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
@@ -240,6 +286,7 @@ export class AmpAcpAgent implements Agent {
   private exportThread: ThreadHistoryExporter;
   private replayRetry: { attempts: number; delayMs: number };
   private discoverPluginModes: (cwd: string) => PluginAgentMode[];
+  private warnedUnsupportedEffort = false;
 
   constructor(
     client: AgentSideConnection,
@@ -312,6 +359,7 @@ export class AmpAcpAgent implements Agent {
       mode: 'default',
       model: 'medium',
       models: buildAmpModels(this.discoverPluginModes(cwd)),
+      effort: 'auto',
       executor: 'local',
       mcpConfig,
       cwd,
@@ -418,6 +466,7 @@ export class AmpAcpAgent implements Agent {
       // authority on resolving or rejecting it when the prompt runs.
       model: mapping.model?.trim() ? mapping.model : 'medium',
       models,
+      effort: mapping.effort && isReasoningEffort(mapping.effort) ? mapping.effort : 'auto',
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd,
@@ -431,6 +480,7 @@ export class AmpAcpAgent implements Agent {
       threadId: s.threadId,
       mode: s.mode,
       model: s.model,
+      effort: s.effort,
       executor: s.executor,
       cwd: s.cwd,
     });
@@ -500,10 +550,19 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       }
     }
 
+    const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
+    const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
+    const effortSupported = transport.name === 'cli';
+    if (effort && !effortSupported && !this.warnedUnsupportedEffort) {
+      this.warnedUnsupportedEffort = true;
+      console.error('[acp] reasoning effort is only supported by the CLI transport; ignoring it for this agent process');
+    }
     const options: AmpExecutionOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       mode: s.model,
+      ...(effort && effortSupported ? { effort } : {}),
+      thinking: process.env.AMP_ACP_DISABLE_THINKING !== '1',
       executor: s.executor,
     };
 
@@ -532,7 +591,6 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     const turnUsage = new TurnUsage();
 
     try {
-      const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
       for await (const message of transport.execute({ prompt: textInput, options, signal: controller.signal })) {
         turnUsage.add(message);
         if (message.session_id) {
@@ -632,6 +690,12 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         s.model = mode;
         break;
       }
+      case CONFIG_REASONING_EFFORT:
+        if (!isReasoningEffort(params.value)) {
+          throw new Error(`Unsupported reasoning effort: ${params.value}`);
+        }
+        s.effort = params.value;
+        break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }

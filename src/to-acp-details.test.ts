@@ -54,6 +54,34 @@ describe('toAcpNotifications tool details', () => {
     expect(update.content?.[0]).not.toHaveProperty('oldText');
   });
 
+  it('renders diffs that create or delete empty content', () => {
+    const [created] = toolCall('create_file', { path: '/tmp/empty.ts', content: '' });
+    expect(created!.update).toMatchObject({
+      content: [{ type: 'diff', path: '/tmp/empty.ts', newText: '' }],
+    });
+
+    const [deleted] = toolCall('edit_file', {
+      path: '/tmp/app.ts',
+      old_string: 'remove me\n',
+      new_string: '',
+    });
+    expect(deleted!.update).toMatchObject({
+      content: [{ type: 'diff', path: '/tmp/app.ts', oldText: 'remove me\n', newText: '' }],
+    });
+  });
+
+  it('maps Amp file and shell tool names to kinds and locations', () => {
+    const [file] = toolCall('create_file', { path: '/tmp/new.ts', content: 'x' });
+    expect(file!.update).toMatchObject({
+      title: 'create_file: /tmp/new.ts',
+      kind: 'edit',
+      locations: [{ path: '/tmp/new.ts' }],
+    });
+
+    const [shell] = toolCall('shell_command', { command: 'bun test' });
+    expect(shell!.update).toMatchObject({ kind: 'execute' });
+  });
+
   it('renders an edit diff for Edit', () => {
     const [notification] = toolCall('Edit', {
       path: '/tmp/app.ts',

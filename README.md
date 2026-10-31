@@ -95,6 +95,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
+- **Steering extension** — clients that support `_amp/session/steer` can add a message to a running session; it is delivered as the next turn
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
@@ -236,6 +237,24 @@ ACP v1 describes `session/prompt` as a long-running request, so most clients wai
 - A 33rd pending prompt is rejected with an invalid-params error instead of growing memory without bound.
 
 The queue is internal to amp-acp and requires no new ACP capability. ACP v2 has native prompt queueing and steering; this is the v1 compatibility path.
+
+### Steering extension
+
+ACP v1 has no method for adding a message to a running turn. amp-acp advertises an `amp-acp/steering` extension in `_meta` with one method and two notifications:
+
+```json
+{"method": "_amp/session/steer", "params": {"sessionId": "S-...", "prompt": [{"type": "text", "text": "also check the failing test"}], "steerId": "client-generated-id"}}
+```
+
+The response is one of:
+
+- `{"outcome": "startedNewTurn"}` when the session was idle and the message started a turn immediately.
+- `{"outcome": "queued"}` when a turn is active; the message is placed at the front of the queue and becomes the next turn.
+- `{"outcome": "failed", "reason": "..."}` for Orb sessions or a full queue.
+
+For `startedNewTurn` and `queued`, the adapter sends `_amp/session/steer_applied` with `{sessionId, steerId}` when the message starts. If a queued steer is cancelled or its turn fails, the adapter sends `_amp/session/steer_failed` with `{sessionId, steerId, reason}`. Prompt blocks are validated before the steer is accepted, so malformed text, resource, or image entries return an invalid-params error instead of starting a turn that immediately fails.
+
+This is a next-turn extension, not live mid-turn injection. Amp's CLI keeps its process alive under `--stream-json-input` but emits no per-turn `result` message, so amp-acp still runs one process per turn and cannot safely detect a turn boundary for in-process steering. Orb execution does not support streaming input at all.
 
 ## MCP Configuration Passthrough
 

@@ -116,6 +116,10 @@ type ReasoningEffort = typeof REASONING_EFFORTS[number];
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
 const NATIVE_METADATA_METHOD = 'amp-acp/session/native-metadata';
 const SET_ARCHIVED_METHOD = 'amp-acp/thread/set-archived';
+const STEERING_CAPABILITY = 'amp-acp/steering';
+const STEER_METHOD = '_amp/session/steer';
+const STEER_APPLIED_METHOD = '_amp/session/steer_applied';
+const STEER_FAILED_METHOD = '_amp/session/steer_failed';
 
 const AMP_MODELS = [
   {
@@ -299,6 +303,21 @@ interface QueuedPrompt {
   params: PromptRequest;
   resolve: (response: PromptResponse) => void;
   reject: (error: unknown) => void;
+  /** Set for a steered message so the client learns when it starts. */
+  steerId?: string;
+}
+
+interface SteerRequest {
+  sessionId: string;
+  prompt: PromptRequest['prompt'];
+  steerId: string;
+}
+
+type SteerOutcome = 'queued' | 'startedNewTurn' | 'failed';
+
+interface SteerResponse {
+  outcome: SteerOutcome;
+  reason?: string;
 }
 
 interface SessionState {
@@ -398,6 +417,13 @@ export class AmpAcpAgent implements Agent {
               nativeMetadata: NATIVE_METADATA_METHOD,
               setArchived: SET_ARCHIVED_METHOD,
             },
+          },
+          [STEERING_CAPABILITY]: {
+            version: 1,
+            method: STEER_METHOD,
+            appliedNotification: STEER_APPLIED_METHOD,
+            failedNotification: STEER_FAILED_METHOD,
+            mode: 'next-turn',
           },
         },
       },
@@ -783,6 +809,9 @@ export class AmpAcpAgent implements Agent {
     }
     const queued = s.queue.splice(0);
     for (const entry of queued) {
+      if (entry.steerId) {
+        void this.notifySteerFailed(entry.params.sessionId, entry.steerId, 'cancelled');
+      }
       entry.resolve({ stopReason: 'cancelled' });
     }
   }
@@ -823,7 +852,69 @@ export class AmpAcpAgent implements Agent {
     if (s.active) return;
     const next = s.queue.shift();
     if (!next) return;
-    void this.startPrompt(next.params, s).then(next.resolve, next.reject);
+    const started = this.startPrompt(next.params, s);
+    if (next.steerId) {
+      void this.notifySteerApplied(next.params.sessionId, next.steerId);
+    }
+    void started.then(next.resolve, next.reject);
+  }
+
+  private async notifySteerApplied(sessionId: string, steerId: string): Promise<void> {
+    try {
+      await this.client.notify(STEER_APPLIED_METHOD, { sessionId, steerId });
+    } catch (e) {
+      console.error('[acp] failed to send steer applied notification', e);
+    }
+  }
+
+  private async notifySteerFailed(sessionId: string, steerId: string, reason: string): Promise<void> {
+    try {
+      await this.client.notify(STEER_FAILED_METHOD, { sessionId, steerId, reason });
+    } catch (e) {
+      console.error('[acp] failed to send steer failed notification', e);
+    }
+  }
+
+  /**
+   * Queues a message for the current turn or the next one. Amp's streaming
+   * input keeps a process alive but does not emit a turn boundary, so a steer
+   * is delivered as the next queued turn instead of being injected mid-turn.
+   */
+  private async steer(params: SteerRequest): Promise<SteerResponse> {
+    const s = this.sessions.get(params.sessionId);
+    if (!s) {
+      throw RequestError.invalidParams(undefined, `Unknown session: ${params.sessionId}`);
+    }
+    if (s.executor === 'orb') {
+      return { outcome: 'failed', reason: 'Steering is only available for local sessions' };
+    }
+    if (s.queue.length >= MAX_QUEUED_PROMPTS) {
+      return { outcome: 'failed', reason: `Prompt queue is full (max ${MAX_QUEUED_PROMPTS} pending prompts)` };
+    }
+
+    const promptRequest: PromptRequest = {
+      sessionId: params.sessionId,
+      prompt: params.prompt,
+    };
+    if (!s.active && s.queue.length === 0) {
+      void this.startPrompt(promptRequest, s).catch((e) => {
+        console.error('[acp] steered turn failed', e);
+        void this.notifySteerFailed(params.sessionId, params.steerId, 'failed');
+      });
+      await this.notifySteerApplied(params.sessionId, params.steerId);
+      return { outcome: 'startedNewTurn' };
+    }
+
+    s.queue.unshift({
+      params: promptRequest,
+      steerId: params.steerId,
+      resolve: () => {},
+      reject: (e) => {
+        console.error('[acp] steered turn failed', e);
+        void this.notifySteerFailed(params.sessionId, params.steerId, 'failed');
+      },
+    });
+    return { outcome: 'queued' };
   }
 
   private async executePrompt(
@@ -1073,9 +1164,76 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         return this.nativeMetadata(params);
       case SET_ARCHIVED_METHOD:
         return this.updateArchivedState(params);
+      case STEER_METHOD: {
+        const response = await this.steer(this.parseSteer(params));
+        return { ...response };
+      }
       default:
         throw RequestError.methodNotFound(method);
     }
+  }
+
+  private parseSteer(params: Record<string, unknown> | null | undefined): SteerRequest {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw RequestError.invalidParams(undefined, 'params must be an object');
+    }
+    if (typeof params.sessionId !== 'string' || params.sessionId.length === 0) {
+      throw RequestError.invalidParams(undefined, 'sessionId must be a non-empty string');
+    }
+    if (typeof params.steerId !== 'string' || params.steerId.length === 0) {
+      throw RequestError.invalidParams(undefined, 'steerId must be a non-empty string');
+    }
+    if (!Array.isArray(params.prompt) || params.prompt.length === 0) {
+      throw RequestError.invalidParams(undefined, 'prompt must be a non-empty array');
+    }
+    for (const chunk of params.prompt) {
+      if (typeof chunk !== 'object' || chunk === null || Array.isArray(chunk)) {
+        throw RequestError.invalidParams(undefined, 'prompt entries must be objects');
+      }
+      const block = chunk as Record<string, unknown>;
+      switch (block.type) {
+        case 'text':
+          if (typeof block.text !== 'string') {
+            throw RequestError.invalidParams(undefined, 'text prompt entries require a text string');
+          }
+          break;
+        case 'resource_link':
+          if (typeof block.uri !== 'string') {
+            throw RequestError.invalidParams(undefined, 'resource_link prompt entries require a uri string');
+          }
+          break;
+        case 'resource': {
+          const resource = block.resource;
+          if (
+            !resource
+            || typeof resource !== 'object'
+            || Array.isArray(resource)
+            || typeof (resource as Record<string, unknown>).uri !== 'string'
+            || typeof (resource as Record<string, unknown>).text !== 'string'
+          ) {
+            throw RequestError.invalidParams(undefined, 'resource prompt entries require uri and text strings');
+          }
+          break;
+        }
+        case 'image':
+          if (
+            typeof block.mimeType !== 'string'
+            || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(block.mimeType)
+            || typeof block.data !== 'string'
+            || block.data.trim() === ''
+          ) {
+            throw RequestError.invalidParams(undefined, 'image prompt entries require a supported mimeType and non-empty base64 data');
+          }
+          break;
+        default:
+          throw RequestError.invalidParams(undefined, `Unsupported prompt block type: ${String(block.type)}`);
+      }
+    }
+    return {
+      sessionId: params.sessionId,
+      steerId: params.steerId,
+      prompt: params.prompt as PromptRequest['prompt'],
+    };
   }
 
   private async nativeMetadata(params: Record<string, unknown>): Promise<Record<string, unknown>> {

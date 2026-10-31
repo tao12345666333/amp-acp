@@ -98,6 +98,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
 - **Session metadata** — each session publishes a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn via `session_info_update`; both are persisted with the session mapping and restored on load or resume
+- **Session discovery and lifecycle** — `session/list` returns persisted sessions (including new sessions that have not started an Amp thread yet), while `session/delete` and `session/close` cancel active and queued work. Delete removes only amp-acp's local mapping; the Amp thread itself is retained
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
 
@@ -149,6 +150,16 @@ During `session/load`, prior messages are replayed to the client as `session/upd
 amp-acp sends the standard `session_info_update` notification with a human-readable `title` and an ISO 8601 `updatedAt` timestamp. The title comes from the first user prompt: whitespace is collapsed, the text is truncated to 60 characters, and a first turn with no text falls back to `Amp session`. amp-acp never calls a model to summarize the session.
 
 Both values are stored alongside the ACP-to-Amp mapping and restored by `session/load` and `session/resume`. During `session/load`, a title or timestamp exported by `amp threads export` takes precedence, so a title renamed in Amp remains authoritative.
+
+### Session discovery and lifecycle
+
+amp-acp advertises `sessionCapabilities.list`, `delete`, `close`, and `resume`.
+
+- `session/list` returns persisted sessions filtered by `cwd` when supplied, newest `updatedAt` first. A session appears as soon as it is created, before its first prompt starts an Amp thread. Results are paginated with an opaque `nextCursor`.
+- `session/close` cancels the active turn and any queued prompts, then releases the in-memory session. The persisted mapping stays, so `session/load` can reopen it later.
+- `session/delete` does the same cancellation and removes the local mapping. It does **not** delete or archive the underlying Amp thread; the thread remains available through the Amp CLI. Delete and close are idempotent, including for unknown session IDs.
+
+Deleting a session also makes later `session/load` and `session/resume` calls fail with an unknown-session error until a new mapping is created.
 
 ### Amp execution transport
 

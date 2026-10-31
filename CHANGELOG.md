@@ -8,6 +8,7 @@
 - Stream Amp thinking blocks as ACP `agent_thought_chunk` updates by default. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead.
 - Serialize concurrent `session/prompt` requests per session, queue up to 32 follow-up prompts, and cancel both the active turn and queued prompts on `session/cancel`.
 - Publish a `session_info_update` with a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn. Persist both with the session mapping and restore them on `session/load` and `session/resume`; a title exported by Amp takes precedence during load.
+- Advertise and implement `session/list`, `session/delete`, and `session/close`. Listing includes new sessions before their first prompt, filters by `cwd`, sorts by `updatedAt`, and paginates with an opaque cursor. Close cancels active and queued work but keeps the mapping; delete also removes the local mapping and is idempotent. Neither operation deletes the underlying Amp thread.
 
 ## 0.10.0 - 2026-10-09
 

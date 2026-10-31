@@ -25,6 +25,13 @@ import {
   type SessionConfigOption,
   type LoadSessionRequest,
   type LoadSessionResponse,
+  type ListSessionsRequest,
+  type ListSessionsResponse,
+  type DeleteSessionRequest,
+  type DeleteSessionResponse,
+  type CloseSessionRequest,
+  type CloseSessionResponse,
+  type SessionInfo,
 } from '@agentclientprotocol/sdk';
 import {
   createAmpTransport,
@@ -58,6 +65,20 @@ const CONFIG_REASONING_EFFORT = 'reasoning-effort';
 const MAX_QUEUED_PROMPTS = 32;
 const MAX_SESSION_TITLE_LENGTH = 60;
 const FALLBACK_SESSION_TITLE = 'Amp session';
+const SESSION_LIST_PAGE_SIZE = 50;
+
+function encodeSessionCursor(offset: number): string {
+  return Buffer.from(String(offset), 'utf8').toString('base64url');
+}
+
+function decodeSessionCursor(cursor: string): number | null {
+  try {
+    const value = Number.parseInt(Buffer.from(cursor, 'base64url').toString('utf8'), 10);
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Derive a stable title from the first user turn without calling a model. */
 function titleFromPrompt(prompt: PromptRequest['prompt']): string {
@@ -282,6 +303,8 @@ interface SessionState {
   cwd: string;
   title?: string;
   updatedAt?: string;
+  /** Set by session/delete so a finishing turn cannot recreate the record. */
+  deleted?: boolean;
 }
 
 interface InitializeResponseWithAgentInfo extends InitializeResponse {
@@ -353,7 +376,7 @@ export class AmpAcpAgent implements Agent {
         loadSession: true,
         promptCapabilities: { image: true, embeddedContext: true },
         mcpCapabilities: { http: true, sse: true },
-        sessionCapabilities: { resume: {} },
+        sessionCapabilities: { list: {}, delete: {}, close: {}, resume: {} },
         _meta: {
           [THREAD_LIFECYCLE_CAPABILITY]: {
             version: 1,
@@ -403,8 +426,10 @@ export class AmpAcpAgent implements Agent {
       executor: 'local',
       mcpConfig,
       cwd,
+      updatedAt: new Date().toISOString(),
     };
     this.sessions.set(sessionId, session);
+    await this.persistSessionQuiet(sessionId, session);
 
     const result: NewSessionResponse = {
       sessionId,
@@ -438,7 +463,7 @@ export class AmpAcpAgent implements Agent {
 
     if (!session) {
       const mapping = await this.threadStore.load(params.sessionId);
-      if (!mapping) {
+      if (!mapping?.threadId) {
         throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
       }
       session = this.sessionFromMapping(mapping, params);
@@ -523,7 +548,7 @@ export class AmpAcpAgent implements Agent {
   }
 
   private async persistSession(sessionId: string, s: SessionState): Promise<void> {
-    if (!s.threadId) return;
+    if (s.deleted) return;
     await this.threadStore.save({
       sessionId,
       threadId: s.threadId,
@@ -548,6 +573,7 @@ export class AmpAcpAgent implements Agent {
 
   /** Persist and publish the current title/timestamp for a session. */
   private async publishSessionInfo(sessionId: string, s: SessionState): Promise<void> {
+    if (s.deleted) return;
     await this.persistSessionQuiet(sessionId, s);
     if (!s.title && !s.updatedAt) return;
     try {
@@ -573,13 +599,77 @@ export class AmpAcpAgent implements Agent {
 
   async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
     const mapping = await this.threadStore.load(params.sessionId);
-    if (!mapping) {
+    if (!mapping?.threadId) {
       throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
     }
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
     await this.publishSessionInfo(params.sessionId, session);
     return { configOptions: buildSessionConfigOptions(session) };
+  }
+
+  async listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
+    const mappings = await this.threadStore.list?.() ?? [];
+    const filtered = params.cwd
+      ? mappings.filter((mapping) => mapping.cwd === params.cwd)
+      : mappings;
+    filtered.sort((a, b) => {
+      const byTime = (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '');
+      return byTime !== 0 ? byTime : a.sessionId.localeCompare(b.sessionId);
+    });
+
+    let offset = 0;
+    if (params.cursor) {
+      const decoded = decodeSessionCursor(params.cursor);
+      if (decoded === null) {
+        throw RequestError.invalidParams(undefined, 'Invalid session list cursor');
+      }
+      offset = decoded;
+    }
+
+    const page = filtered.slice(offset, offset + SESSION_LIST_PAGE_SIZE);
+    const sessions: SessionInfo[] = page.map((mapping) => ({
+      sessionId: mapping.sessionId,
+      cwd: mapping.cwd && path.isAbsolute(mapping.cwd) ? mapping.cwd : process.cwd(),
+      ...(mapping.title ? { title: mapping.title } : {}),
+      ...(mapping.updatedAt ? { updatedAt: mapping.updatedAt } : {}),
+    }));
+    const nextOffset = offset + page.length;
+    return {
+      sessions,
+      ...(nextOffset < filtered.length ? { nextCursor: encodeSessionCursor(nextOffset) } : {}),
+    };
+  }
+
+  async deleteSession(params: DeleteSessionRequest): Promise<DeleteSessionResponse> {
+    const session = this.sessions.get(params.sessionId);
+    if (session) {
+      session.deleted = true;
+      this.cancelSessionTurns(session);
+      this.sessions.delete(params.sessionId);
+    }
+    await this.threadStore.delete?.(params.sessionId);
+    return {};
+  }
+
+  async closeSession(params: CloseSessionRequest): Promise<CloseSessionResponse> {
+    const session = this.sessions.get(params.sessionId);
+    if (session) {
+      this.cancelSessionTurns(session);
+      this.sessions.delete(params.sessionId);
+    }
+    return {};
+  }
+
+  private cancelSessionTurns(s: SessionState): void {
+    if (s.active) {
+      s.active.cancelled = true;
+      s.active.controller.abort();
+    }
+    const queued = s.queue.splice(0);
+    for (const entry of queued) {
+      entry.resolve({ stopReason: 'cancelled' });
+    }
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -774,16 +864,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
   async cancel(params: CancelNotification): Promise<void> {
     const s = this.sessions.get(params.sessionId);
     if (!s) return;
-
-    if (s.active) {
-      s.active.cancelled = true;
-      s.active.controller.abort();
-    }
-
-    const queued = s.queue.splice(0);
-    for (const entry of queued) {
-      entry.resolve({ stopReason: 'cancelled' });
-    }
+    this.cancelSessionTurns(s);
   }
 
   async setSessionConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {

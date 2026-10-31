@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -11,6 +11,7 @@ import {
   isAmpThreadId,
   setAmpThreadArchived,
   type AmpExecutionOptions,
+  type AmpPromptContent,
   type AmpStreamMessage,
 } from './amp-transport.js';
 
@@ -29,6 +30,7 @@ beforeAll(async () => {
   await writeFile(fixturePath, `
 let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;
+if (prompt.startsWith('{') && !process.argv.includes('--stream-json-input')) throw new Error('missing JSON input flag');
 if (prompt === 'fail') {
   console.error('fixture failure');
   process.exit(2);
@@ -259,6 +261,121 @@ process.exit(3);
       options: { ...baseOptions, cwd: fixtureDir },
       signal: new AbortController().signal,
     }))).rejects.toThrow('Amp CLI process exited with code 2: fixture failure');
+  });
+
+  it('sends ordered image blocks as one JSON Lines user message', async () => {
+    const content: AmpPromptContent[] = [
+      { type: 'text', text: 'before' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+      { type: 'text', text: 'after' },
+    ];
+    const executableFixture = path.join(fixtureDir, 'fake-amp-executable');
+    await writeFile(executableFixture, `#!${process.execPath}\n${await Bun.file(fixturePath).text()}`, { mode: 0o700 });
+    const originalCliPath = process.env.AMP_CLI_PATH;
+    process.env.AMP_CLI_PATH = executableFixture;
+    try {
+      for (const transport of [createCliTransport(process.execPath, [fixturePath]), createAmpTransport('sdk')]) {
+        const messages = await collect(transport.execute({
+          prompt: 'beforeafter', content,
+          options: { ...baseOptions, cwd: fixtureDir },
+          signal: new AbortController().signal,
+        }));
+        expect(messages.at(-1)).toMatchObject({ result: JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n' });
+      }
+    } finally {
+      if (originalCliPath === undefined) delete process.env.AMP_CLI_PATH;
+      else process.env.AMP_CLI_PATH = originalCliPath;
+    }
+  });
+
+  it('uploads every Orb image as a private attachment and cleans up on success, failure, and cancellation', async () => {
+    const attachmentFixture = path.join(fixtureDir, 'attachments.mjs');
+    await writeFile(attachmentFixture, `
+import { readFile, stat } from 'node:fs/promises';
+const args = process.argv.slice(2);
+if (!args.includes('--orb-execute') || args.includes('--stream-json-input')) throw new Error('wrong remote input route');
+const images = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--attach') {
+    const file = args[++i];
+    images.push({ file, data: (await readFile(file)).toString('base64'), mode: (await stat(file)).mode & 0o777 });
+  }
+}
+let text = '';
+for await (const chunk of process.stdin) text += chunk;
+console.log(JSON.stringify({ type: 'user', message: { content: images } }));
+if (text === 'fail') { console.error('upload failed'); process.exit(2); }
+if (text === 'wait') await new Promise(resolve => setTimeout(resolve, 30000));
+console.log(JSON.stringify({ type: 'result', is_error: false, result: text }));
+`);
+    const transport = createCliTransport(process.execPath, [attachmentFixture]);
+    const content: AmpPromptContent[] = [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BAU=' } },
+    ];
+    for (const prompt of ['describe both', 'fail', 'wait']) {
+      const messages: AmpStreamMessage[] = [];
+      const controller = new AbortController();
+      const stream = transport.execute({ prompt, content, options: { ...baseOptions, cwd: fixtureDir, executor: 'orb' }, signal: controller.signal });
+      const run = async () => {
+        for await (const message of stream) messages.push(message);
+      };
+      if (prompt === 'fail') await expect(run()).rejects.toThrow('upload failed');
+      else if (prompt === 'wait') {
+        const iterator = stream[Symbol.asyncIterator]();
+        messages.push((await iterator.next()).value!);
+        controller.abort();
+        await expect(iterator.next()).rejects.toThrow('aborted');
+      }
+      else await run();
+      const images = messages[0]?.message?.content as { file: string; data: string; mode: number }[];
+      expect(images.map(({ data }) => data)).toEqual(['AQID', 'BAU=']);
+      expect(images.map(({ mode }) => mode)).toEqual([0o600, 0o600]);
+      for (const image of images) await expect(access(path.dirname(image.file))).rejects.toThrow();
+      if (prompt === 'describe both') expect(messages.at(-1)).toMatchObject({ result: prompt });
+    }
+  });
+
+  it('uses the CLI Orb route when the SDK transport receives image content', async () => {
+    const orbFixture = path.join(fixtureDir, 'sdk-orb-attachments.mjs');
+    await writeFile(orbFixture, `
+import { readFile, stat } from 'node:fs/promises';
+const args = process.argv.slice(2);
+if (!args.includes('--orb-execute') || args.includes('--stream-json-input')) throw new Error('wrong remote input route');
+const images = [];
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--attach') {
+    const file = args[++i];
+    images.push({ file, data: (await readFile(file)).toString('base64'), mode: (await stat(file)).mode & 0o777 });
+  }
+}
+console.log(JSON.stringify({ type: 'user', message: { content: images } }));
+console.log(JSON.stringify({ type: 'result', is_error: false, result: 'ok' }));
+`);
+    const executableFixture = path.join(fixtureDir, 'sdk-orb-executable');
+    await writeFile(executableFixture, `#!${process.execPath}\n${await Bun.file(orbFixture).text()}`, { mode: 0o700 });
+    const originalCliPath = process.env.AMP_CLI_PATH;
+    process.env.AMP_CLI_PATH = executableFixture;
+    try {
+      const content: AmpPromptContent[] = [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BAU=' } },
+      ];
+      const messages = await collect(createAmpTransport('sdk').execute({
+        prompt: 'describe both',
+        content,
+        options: { ...baseOptions, cwd: fixtureDir, executor: 'orb' },
+        signal: new AbortController().signal,
+      }));
+      const images = messages[0]?.message?.content as { file: string; data: string; mode: number }[];
+      expect(images.map(({ data }) => data)).toEqual(['AQID', 'BAU=']);
+      expect(images.map(({ mode }) => mode)).toEqual([0o600, 0o600]);
+      for (const image of images) await expect(access(path.dirname(image.file))).rejects.toThrow();
+      expect(messages.at(-1)).toMatchObject({ result: 'ok' });
+    } finally {
+      if (originalCliPath === undefined) delete process.env.AMP_CLI_PATH;
+      else process.env.AMP_CLI_PATH = originalCliPath;
+    }
   });
 
   it('terminates the CLI process when cancelled', async () => {

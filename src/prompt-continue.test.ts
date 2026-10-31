@@ -171,6 +171,47 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(calls[0]!.thinking).toBe(true);
   });
 
+  it('passes reasoning effort on local image turns that fall back from the SDK to the CLI', async () => {
+    const calls: AmpExecutionOptions[] = [];
+    const sdkTransport: AmpTransport = {
+      name: 'sdk',
+      async *execute({ options }) {
+        calls.push(options);
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    const sdkAgent = new AmpAcpAgent(mockClient, sdkTransport, {
+      orbTransport: sdkTransport,
+      threadStore: {
+        load: async (sessionId) => mappings.get(sessionId) ?? null,
+        save: async (mapping) => {
+          mappings.set(mapping.sessionId, mapping);
+        },
+      },
+      discoverPluginModes: () => [],
+    });
+    await sdkAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await sdkAgent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await sdkAgent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'high',
+    });
+    const image = { type: 'image' as const, mimeType: 'image/png', data: 'AQID' };
+
+    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [image] });
+    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'hello' }] });
+    await sdkAgent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'execution-environment',
+      value: 'orb',
+    });
+    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [image] });
+
+    expect(calls.map((options) => options.effort)).toEqual(['high', undefined, undefined]);
+  });
+
   it('omits effort when auto is selected and can disable thinking', async () => {
     const saved = process.env.AMP_ACP_DISABLE_THINKING;
     process.env.AMP_ACP_DISABLE_THINKING = '1';

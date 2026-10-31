@@ -57,15 +57,17 @@ if (argv[0] === 'threads' && argv[1] === 'export') {
   process.exit(0);
 }
 
-let prompt = '';
-process.stdin.on('data', (chunk) => (prompt += chunk));
-process.stdin.on('end', () => {
+const readline = require('node:readline');
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const input = JSON.parse(line);
+  const prompt = input.message.content.map((part) => part.text ?? '').join('');
   record(prompt);
   fs.appendFileSync(transcript, JSON.stringify({ role: 'user', text: prompt }) + '\\n');
   fs.appendFileSync(transcript, JSON.stringify({ role: 'assistant', text: 'echo:' + prompt }) + '\\n');
   console.log(JSON.stringify({
     type: 'system', subtype: 'init', session_id: '${THREAD_ID}',
   }));
+  console.log(JSON.stringify({ type: 'user', message: input.message }));
   console.log(JSON.stringify({
     type: 'assistant',
     message: { content: [{ type: 'text', text: 'echo:' + prompt }] },

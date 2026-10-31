@@ -21,30 +21,42 @@ beforeAll(async () => {
   fixtureDir = await mkdtemp(path.join(os.tmpdir(), 'amp-acp-e2e-'));
   fakeAmpPath = path.join(fixtureDir, 'amp.mjs');
   await writeFile(fakeAmpPath, `#!/usr/bin/env node
-let prompt = '';
-for await (const chunk of process.stdin) prompt += chunk;
-
-const continued = process.argv.includes('continue');
-console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-01a03c00-e608-7007-8181-5c1cc56757be' }));
-if (prompt === 'cancel me') await new Promise((resolve) => setTimeout(resolve, 30000));
-console.log(JSON.stringify({
-  type: 'assistant',
-  message: { content: [
-    { type: 'thinking', thinking: 'Checking the request' },
-    { type: 'tool_use', id: 'tool-1', name: 'Read', input: { path: 'README.md' } },
-  ] },
-}));
-console.log(JSON.stringify({
-  type: 'user',
-  message: { content: [
-    { type: 'tool_result', tool_use_id: 'tool-1', content: 'fixture result', is_error: false },
-  ] },
-}));
-console.log(JSON.stringify({
-  type: 'assistant',
-  message: { content: [{ type: 'text', text: 'reply:' + prompt + ';continued:' + continued }] },
-}));
-console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }));
+import { createInterface } from 'node:readline';
+let promptCount = 0;
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const input = JSON.parse(line);
+  const prompt = input.message.content.map((part) => part.text).join('');
+  promptCount += 1;
+  const continued = promptCount > 1;
+  if (promptCount === 1) {
+    console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-01a03c00-e608-7007-8181-5c1cc56757be' }));
+  }
+  console.log(JSON.stringify({ type: 'user', message: { content: input.message.content } }));
+  if (prompt === 'cancel me') return;
+  console.log(JSON.stringify({
+    type: 'assistant',
+    message: { content: [
+      { type: 'thinking', thinking: 'Checking the request' },
+      { type: 'tool_use', id: 'tool-1', name: 'Read', input: { path: 'README.md' } },
+    ] },
+  }));
+  console.log(JSON.stringify({
+    type: 'user',
+    message: { content: [
+      { type: 'tool_result', tool_use_id: 'tool-1', content: 'fixture result', is_error: false },
+    ] },
+  }));
+  console.log(JSON.stringify({
+    type: 'assistant',
+    message: {
+      content: [{
+        type: 'text',
+        text: 'reply:' + prompt + ';continued:' + continued + ';steer:' + input.steer,
+      }],
+      stop_reason: 'end_turn',
+    },
+  }));
+});
 `);
   await chmod(fakeAmpPath, 0o755);
 });
@@ -70,6 +82,7 @@ describe('ACP client to compiled amp-acp binary', () => {
       env: {
         ...globalThis.process.env,
         AMP_ACP_TRANSPORT: 'cli',
+        AMP_ACP_CANCEL_MODE: 'steer',
         AMP_CLI_PATH: fakeAmpPath,
         AMP_API_KEY: 'test-key',
       },
@@ -98,33 +111,34 @@ describe('ACP client to compiled amp-acp binary', () => {
             cwd: fixtureDir,
             mcpServers: [],
           });
-          const first = agent.request(methods.agent.session.prompt, {
+          const first = await agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'first prompt' }],
           });
-          const second = agent.request(methods.agent.session.prompt, {
+          const second = await agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'second prompt' }],
           });
-          const [firstResponse, secondResponse] = await Promise.all([first, second]);
 
           const cancelledPrompt = agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'cancel me' }],
           });
-          const queuedCancelledPrompt = agent.request(methods.agent.session.prompt, {
-            sessionId: session.sessionId,
-            prompt: [{ type: 'text', text: 'queued cancel' }],
-          });
           await new Promise((resolve) => setTimeout(resolve, 100));
           await agent.notify(methods.agent.session.cancel, { sessionId: session.sessionId });
 
+          const cancelled = await cancelledPrompt;
+          const steered = await agent.request(methods.agent.session.prompt, {
+            sessionId: session.sessionId,
+            prompt: [{ type: 'text', text: 'change direction' }],
+          });
+
           return {
             initialized,
-            first: firstResponse,
-            second: secondResponse,
-            cancelled: await cancelledPrompt,
-            queuedCancelled: await queuedCancelledPrompt,
+            first,
+            second,
+            cancelled,
+            steered,
           };
         });
 
@@ -132,7 +146,7 @@ describe('ACP client to compiled amp-acp binary', () => {
       expect(result.first.stopReason).toBe('end_turn');
       expect(result.second.stopReason).toBe('end_turn');
       expect(result.cancelled.stopReason).toBe('cancelled');
-      expect(result.queuedCancelled.stopReason).toBe('cancelled');
+      expect(result.steered.stopReason).toBe('end_turn');
 
       const sessionUpdates = updates.map((notification) => notification.update);
       expect(sessionUpdates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_thought_chunk' }));
@@ -147,28 +161,23 @@ describe('ACP client to compiled amp-acp binary', () => {
       }));
       expect(sessionUpdates).toContainEqual(expect.objectContaining({
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'reply:first prompt;continued:false' },
+        content: { type: 'text', text: 'reply:first prompt;continued:false;steer:false' },
       }));
       expect(sessionUpdates).toContainEqual(expect.objectContaining({
         sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: 'reply:second prompt;continued:true' },
+        content: { type: 'text', text: 'reply:second prompt;continued:true;steer:false' },
+      }));
+      expect(sessionUpdates).toContainEqual(expect.objectContaining({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'reply:change direction;continued:true;steer:true' },
       }));
 
-      // The second concurrent prompt must be queued until the first completes.
-      const firstReplyIndex = sessionUpdates.findIndex(
-        (update) => update.sessionUpdate === 'agent_message_chunk'
-          && 'content' in update
-          && update.content.type === 'text'
-          && update.content.text === 'reply:first prompt;continued:false',
-      );
-      const secondReplyIndex = sessionUpdates.findIndex(
-        (update) => update.sessionUpdate === 'agent_message_chunk'
-          && 'content' in update
-          && update.content.type === 'text'
-          && update.content.text === 'reply:second prompt;continued:true',
-      );
-      expect(firstReplyIndex).toBeGreaterThanOrEqual(0);
-      expect(secondReplyIndex).toBeGreaterThan(firstReplyIndex);
+      process.stdin!.end();
+      const exited = await Promise.race([
+        new Promise<boolean>((resolve) => process.once('exit', () => resolve(true))),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
+      ]);
+      expect(exited).toBe(true);
     } catch (error) {
       const logs = Buffer.concat(stderr).toString().trim();
       throw new Error(`${error instanceof Error ? error.message : String(error)}${logs ? `\namp-acp stderr:\n${logs}` : ''}`);

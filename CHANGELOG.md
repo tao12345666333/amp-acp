@@ -15,6 +15,7 @@
 - Send richer tool updates: tool names, `in_progress` status, raw output, file diffs for edit and write tools, and Amp message IDs on content chunks.
 - Convert Amp todo tool calls into ACP `plan` updates with the complete todo list, status and priority mapping, duplicate suppression, and no stray todo tool result.
 - Add the `_amp/session/steer` extension for steering a running local session as the next queued turn, with `_amp/session/steer_applied` and `_amp/session/steer_failed` notifications and explicit `failed` outcomes for Orb sessions.
+- Keep one local CLI process per ACP session, and with `AMP_ACP_CANCEL_MODE=steer`, deliver the first prompt after cancellation using Amp's `steer` marker instead of queuing it as ordinary input. Configuration changes now restart the idle local process so the next turn uses the new settings.
 - Advertise Amp's built-in `/review`, `/ship`, `/update-base`, and `/refactor-commits` slash prompts alongside `/init`, and pass them through to the agent unchanged.
 
 ## 0.10.0 - 2026-10-09

@@ -330,6 +330,8 @@ function buildSessionConfigOptions(
 interface ActiveTurn {
   controller: AbortController;
   cancelled: boolean;
+  /** Send the first input of this turn with Amp's steer marker. */
+  steer: boolean;
 }
 
 interface QueuedPrompt {
@@ -357,6 +359,10 @@ interface SessionState {
   threadId: string | null;
   active: ActiveTurn | null;
   queue: QueuedPrompt[];
+  /** Set by cancel to mark the replacement prompt as an Amp steer. */
+  steerNextPrompt: boolean;
+  /** A local CLI process owns the session's fixed execution options. */
+  processStarted: boolean;
   mode: PermissionMode;
   model: string;
   models: AmpModel[];
@@ -492,6 +498,8 @@ export class AmpAcpAgent implements Agent {
       threadId: null,
       active: null,
       queue: [],
+      steerNextPrompt: false,
+      processStarted: false,
       mode: 'default',
       model: 'medium',
       models: buildAmpModels(this.discoverPluginModes(cwd)),
@@ -597,6 +605,8 @@ export class AmpAcpAgent implements Agent {
       threadId: mapping.threadId,
       active: null,
       queue: [],
+      steerNextPrompt: false,
+      processStarted: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
       // Keep the persisted Amp mode even when discovery does not currently
       // list it (e.g. its plugin is temporarily unloaded); Amp is the
@@ -825,6 +835,7 @@ export class AmpAcpAgent implements Agent {
       this.cancelSessionTurns(session);
       this.sessions.delete(params.sessionId);
     }
+    this.transport.closeSession?.(params.sessionId);
     await this.threadStore.delete?.(params.sessionId);
     return {};
   }
@@ -835,11 +846,15 @@ export class AmpAcpAgent implements Agent {
       this.cancelSessionTurns(session);
       this.sessions.delete(params.sessionId);
     }
+    this.transport.closeSession?.(params.sessionId);
     return {};
   }
 
-  private cancelSessionTurns(s: SessionState): void {
+  private cancelSessionTurns(s: SessionState, preserveSteering = false): void {
     if (s.active) {
+      s.steerNextPrompt = preserveSteering
+        && s.executor === 'local'
+        && this.transport.supportsSteering === true;
       s.active.cancelled = true;
       s.active.controller.abort();
     }
@@ -856,6 +871,17 @@ export class AmpAcpAgent implements Agent {
     const s = this.sessions.get(params.sessionId);
     if (!s) throw new Error('Session not found');
     if (s.active || s.queue.length > 0) {
+      // A steered replacement may start while the cancelled turn is still
+      // unwinding; the replacement owns the same live Amp process.
+      if (
+        s.active?.controller.signal.aborted === true &&
+        s.steerNextPrompt &&
+        s.queue.length === 0 &&
+        s.executor === 'local' &&
+        this.transport.supportsSteering === true
+      ) {
+        return this.startPrompt(params, s);
+      }
       return this.enqueuePrompt(params, s);
     }
     return this.startPrompt(params, s);
@@ -874,7 +900,12 @@ export class AmpAcpAgent implements Agent {
   }
 
   private startPrompt(params: PromptRequest, s: SessionState): Promise<PromptResponse> {
-    const turn: ActiveTurn = { controller: new AbortController(), cancelled: false };
+    const turn: ActiveTurn = {
+      controller: new AbortController(),
+      cancelled: false,
+      steer: s.steerNextPrompt,
+    };
+    s.steerNextPrompt = false;
     s.active = turn;
     return this.executePrompt(params, s, turn).finally(() => {
       if (s.active === turn) s.active = null;
@@ -1008,6 +1039,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     if (!s.title) s.title = titleFromPrompt(params.prompt);
 
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
+    if (transport.name === 'cli') s.processStarted = true;
     const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
     // Local image turns run through the CLI even on the SDK transport.
     const effortSupported = transport.name === 'cli' || (hasImages && s.executor !== 'orb');
@@ -1049,7 +1081,14 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     let stopReason: PromptResponse['stopReason'] = 'end_turn';
 
     try {
-      for await (const message of transport.execute({ prompt: textInput, ...(hasImages ? { content } : {}), options, signal: turn.controller.signal })) {
+      for await (const message of transport.execute({
+        sessionId: params.sessionId,
+        prompt: textInput,
+        ...(hasImages ? { content } : {}),
+        options,
+        signal: turn.controller.signal,
+        steer: turn.steer && s.executor === 'local',
+      })) {
         turnUsage.add(message);
         await this.sendMcpNotices(params.sessionId, s, message);
         await this.sendPermissionDenialNotice(params.sessionId, message);
@@ -1119,7 +1158,26 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
   async cancel(params: CancelNotification): Promise<void> {
     const s = this.sessions.get(params.sessionId);
     if (!s) return;
-    this.cancelSessionTurns(s);
+    this.cancelSessionTurns(s, true);
+  }
+
+  close(): void {
+    this.transport.closeAll?.();
+  }
+
+  /**
+   * A persistent CLI process keeps the options it was started with. Close it
+   * when an option changes so the next prompt starts a fresh process with the
+   * new settings while continuing the same durable Amp thread.
+   */
+  private resetCliProcessForConfigChange(sessionId: string, s: SessionState): void {
+    if (this.transport.name !== 'cli' || !s.processStarted) return;
+    if (s.active && !s.active.controller.signal.aborted) {
+      throw new Error('Session configuration cannot change while a prompt is active');
+    }
+    this.transport.closeSession?.(sessionId);
+    s.processStarted = false;
+    s.steerNextPrompt = false;
   }
 
   async setSessionConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {
@@ -1129,17 +1187,20 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
       throw new Error(`Unsupported value for ${params.configId}`);
     }
 
+    let changed = false;
     switch (params.configId) {
       case CONFIG_EXECUTOR:
         if (!isExecutor(params.value)) {
           throw new Error(`Unsupported execution environment: ${params.value}`);
         }
+        changed = s.executor !== params.value;
         s.executor = params.value;
         break;
       case CONFIG_PERMISSION:
         if (!isPermissionMode(params.value)) {
           throw new Error(`Unsupported permission mode: ${params.value}`);
         }
+        changed = s.mode !== params.value;
         s.mode = params.value;
         break;
       case CONFIG_AMP_MODE: {
@@ -1152,6 +1213,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         if (!mode) {
           throw new Error('Amp mode must be a non-empty string');
         }
+        changed = s.model !== mode;
         s.model = mode;
         break;
       }
@@ -1159,11 +1221,14 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         if (!isReasoningEffort(params.value)) {
           throw new Error(`Unsupported reasoning effort: ${params.value}`);
         }
+        changed = s.effort !== params.value;
         s.effort = params.value;
         break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
+
+    if (changed) this.resetCliProcessForConfigChange(params.sessionId, s);
 
     await this.persistSessionQuiet(params.sessionId, s);
 
@@ -1189,7 +1254,10 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     if (!isPermissionMode(params.modeId)) {
       throw new Error(`Unsupported mode: ${params.modeId}`);
     }
-    s.mode = params.modeId;
+    if (s.mode !== params.modeId) {
+      this.resetCliProcessForConfigChange(params.sessionId, s);
+      s.mode = params.modeId;
+    }
     await this.persistSessionQuiet(params.sessionId, s);
     return {};
   }

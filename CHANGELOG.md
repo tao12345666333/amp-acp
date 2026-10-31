@@ -14,6 +14,7 @@
 - Advertise and implement `session/list`, `session/delete`, and `session/close`. Listing includes new sessions before their first prompt, filters by `cwd`, sorts by `updatedAt`, and paginates with an opaque cursor. Close cancels active and queued work but keeps the mapping; delete also removes the local mapping and is idempotent. Neither operation deletes the underlying Amp thread.
 - Send richer tool updates: tool names, `in_progress` status, raw output, file diffs for edit and write tools, and Amp message IDs on content chunks.
 - Convert Amp todo tool calls into ACP `plan` updates with the complete todo list, status and priority mapping, duplicate suppression, and no stray todo tool result.
+- Add the `_amp/session/steer` extension for steering a running local session as the next queued turn, with `_amp/session/steer_applied` and `_amp/session/steer_failed` notifications and explicit `failed` outcomes for Orb sessions.
 
 ## 0.10.0 - 2026-10-09
 

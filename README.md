@@ -103,6 +103,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
 - **Context usage and notices** — stream `usage_update` from the latest model call and map Amp stop reasons (`max_tokens`, `max_turn_requests`); report failed MCP servers and permission denials as ACP notices when the client supports them
+- **Live plan updates** — Amp todo tool calls become ACP `plan` updates with the complete todo list, so clients can render progress instead of a raw tool call. Identical consecutive plans are suppressed
 
 ### Context usage and session notices
 
@@ -182,6 +183,12 @@ Deleting a session also makes later `session/load` and `session/resume` calls fa
 ### Amp execution transport
 
 By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes, plus any plugin agent modes (see below).
+
+### Plan updates
+
+When Amp calls its todo tool (`TodoWrite` or `todo_write`), amp-acp converts the todo list into an ACP `plan` update instead of a raw tool call. Each update contains the complete list, as ACP requires, with `pending`, `in_progress`, or `completed` statuses and `high`, `medium`, or `low` priorities (`medium` is used when Amp does not provide one). Empty entries are skipped; an empty todo list clears the plan. Consecutive identical plans are not sent twice.
+
+The matching successful todo tool result is suppressed so clients do not show a stray tool result for a call they never received. A failed todo write is surfaced as a failed `tool_call_update`.
 
 ### Plugin agent modes
 

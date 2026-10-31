@@ -60,7 +60,7 @@ import {
   permissionDenialNames,
   stopReasonFromAssistant,
 } from './turn-events.js';
-import { toAcpNotifications } from './to-acp.js';
+import { createAcpConversionState, toAcpNotifications, type AcpConversionState } from './to-acp.js';
 import { exportThreadDetails, exportThreadHistory, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
 import packageJson from '../package.json';
@@ -318,6 +318,7 @@ interface SessionState {
   mcpStatuses: Map<string, string>;
   /** Set by session/delete so a finishing turn cannot recreate the record. */
   deleted?: boolean;
+  acpState: AcpConversionState;
 }
 
 interface InitializeResponseWithAgentInfo extends InitializeResponse {
@@ -441,6 +442,7 @@ export class AmpAcpAgent implements Agent {
       cwd,
       mcpStatuses: new Map(),
       updatedAt: new Date().toISOString(),
+      acpState: createAcpConversionState(),
     };
     this.sessions.set(sessionId, session);
     await this.persistSessionQuiet(sessionId, session);
@@ -501,7 +503,7 @@ export class AmpAcpAgent implements Agent {
           .trim();
         if (exportedTitle) session.title = exportedTitle;
         if (thread.updatedAt) session.updatedAt = thread.updatedAt;
-        for (const notification of historyToNotifications(thread.messages, params.sessionId)) {
+        for (const notification of historyToNotifications(thread.messages, params.sessionId, createAcpConversionState())) {
           await this.client.sessionUpdate(notification);
         }
       } catch (e) {
@@ -559,6 +561,7 @@ export class AmpAcpAgent implements Agent {
       ...(mapping.title ? { title: mapping.title } : {}),
       ...(mapping.updatedAt ? { updatedAt: mapping.updatedAt } : {}),
       mcpStatuses: new Map(),
+      acpState: createAcpConversionState(),
     };
   }
 
@@ -945,7 +948,7 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
         }
 
         if (message.type === 'assistant' || message.type === 'user') {
-          for (const n of toAcpNotifications(message, params.sessionId)) {
+          for (const n of toAcpNotifications(message, params.sessionId, s.acpState)) {
             try {
               await this.client.sessionUpdate(n);
             } catch (e) {

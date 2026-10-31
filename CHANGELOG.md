@@ -13,6 +13,7 @@
 - Publish a `session_info_update` with a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn. Persist both with the session mapping and restore them on `session/load` and `session/resume`; a title exported by Amp takes precedence during load.
 - Advertise and implement `session/list`, `session/delete`, and `session/close`. Listing includes new sessions before their first prompt, filters by `cwd`, sorts by `updatedAt`, and paginates with an opaque cursor. Close cancels active and queued work but keeps the mapping; delete also removes the local mapping and is idempotent. Neither operation deletes the underlying Amp thread.
 - Send richer tool updates: tool names, `in_progress` status, raw output, file diffs for edit and write tools, and Amp message IDs on content chunks.
+- Convert Amp todo tool calls into ACP `plan` updates with the complete todo list, status and priority mapping, duplicate suppression, and no stray todo tool result.
 
 ## 0.10.0 - 2026-10-09
 

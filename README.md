@@ -97,6 +97,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **`/init` command** — Type `/init` to generate an `AGENTS.md` file for your project
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
+- **Session metadata** — each session publishes a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn via `session_info_update`; both are persisted with the session mapping and restored on load or resume
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
 
@@ -142,6 +143,12 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 amp-acp advertises the ACP `loadSession` capability. Once a prompt has started an Amp thread, the ACP session ID is mapped to that thread in the durable session store described above (`$XDG_STATE_HOME/amp-acp/sessions`, one file per session; respects `%LOCALAPPDATA%\amp-acp` on Windows and can be overridden with `AMP_ACP_STATE_DIR`). The store also records the session's permission mode, Amp mode, and execution environment, so when a client calls `session/load`, amp-acp restores those settings and continues the same thread (equivalent to `amp threads continue <id>`), even across amp-acp process restarts.
 
 During `session/load`, prior messages are replayed to the client as `session/update` notifications (user/agent messages, thinking, and tool calls) using `amp threads export`, so the client can rebuild the transcript. Replay is best-effort: if the export fails, the session still loads and the thread still continues with full server-side context.
+
+### Session title and timestamp
+
+amp-acp sends the standard `session_info_update` notification with a human-readable `title` and an ISO 8601 `updatedAt` timestamp. The title comes from the first user prompt: whitespace is collapsed, the text is truncated to 60 characters, and a first turn with no text falls back to `Amp session`. amp-acp never calls a model to summarize the session.
+
+Both values are stored alongside the ACP-to-Amp mapping and restored by `session/load` and `session/resume`. During `session/load`, a title or timestamp exported by `amp threads export` takes precedence, so a title renamed in Amp remains authoritative.
 
 ### Amp execution transport
 

@@ -19,6 +19,10 @@ export interface AmpThreadMapping {
   executor?: string;
   /** Working directory the session ran in, if persisted. */
   cwd?: string;
+  /** Human-readable session title derived from the first user prompt. */
+  title?: string;
+  /** ISO 8601 timestamp of the last completed turn. */
+  updatedAt?: string;
 }
 
 export interface ThreadMappingStore {
@@ -47,7 +51,7 @@ function validateMapping(value: unknown, expectedSessionId: string): AmpThreadMa
     sessionId: expectedSessionId,
     threadId: mapping.threadId,
   };
-  for (const field of ['mode', 'model', 'effort', 'executor', 'cwd'] as const) {
+  for (const field of ['mode', 'model', 'effort', 'executor', 'cwd', 'title', 'updatedAt'] as const) {
     const fieldValue = mapping[field];
     if (fieldValue === undefined) continue;
     if (typeof fieldValue !== 'string') {

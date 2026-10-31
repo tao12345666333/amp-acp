@@ -194,7 +194,12 @@ describe('AmpAcpAgent session/load', () => {
 
     expect(exportedThreads).toEqual(['T-01234567-89ab-cdef-0123-456789abcdef']);
     const kinds = (updates as { update: { sessionUpdate: string } }[]).map((u) => u.update.sessionUpdate);
-    expect(kinds).toEqual(['user_message_chunk', 'agent_thought_chunk', 'agent_message_chunk']);
+    expect(kinds).toEqual([
+      'user_message_chunk',
+      'agent_thought_chunk',
+      'agent_message_chunk',
+      'session_info_update',
+    ]);
     const texts = (updates as { update: { content?: { text?: string } } }[])
       .map((u) => u.update.content?.text)
       .filter(Boolean);

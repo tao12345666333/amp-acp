@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { exportThreadMessages, type ExportedThreadMessage } from './thread-history.js';
+import { exportThreadDetails, exportThreadMessages, type ExportedThreadMessage } from './thread-history.js';
 
 const MESSAGE: ExportedThreadMessage = { role: 'user', content: [{ type: 'text', text: 'hi' }] };
 
@@ -32,6 +32,20 @@ describe('exportThreadMessages', () => {
     }, 'T-01234567-89ab-cdef-0123-456789abcdef', '/tmp', 3, 0);
     expect(messages).toEqual([]);
     expect(calls).toBe(3);
+  });
+
+  it('preserves exported title and timestamp', async () => {
+    const thread = await exportThreadDetails(async () => ({
+      messages: [MESSAGE],
+      title: 'Amp exported title',
+      updatedAt: '2026-10-31T12:00:00.000Z',
+    }), 'T-01234567-89ab-cdef-0123-456789abcdef', '/tmp', 5, 0);
+
+    expect(thread).toEqual({
+      messages: [MESSAGE],
+      title: 'Amp exported title',
+      updatedAt: '2026-10-31T12:00:00.000Z',
+    });
   });
 
   it('propagates export errors without retrying', async () => {

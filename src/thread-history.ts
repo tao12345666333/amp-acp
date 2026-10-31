@@ -7,7 +7,25 @@ export interface ExportedThreadMessage {
   content?: unknown;
 }
 
-export type ThreadHistoryExporter = (threadId: string, cwd: string) => Promise<ExportedThreadMessage[]>;
+export interface ExportedThread {
+  messages: ExportedThreadMessage[];
+  title?: string;
+  updatedAt?: string;
+}
+
+export type ThreadHistoryExporter = (
+  threadId: string,
+  cwd: string,
+) => Promise<ExportedThreadMessage[] | ExportedThread>;
+
+function normalizeExport(value: ExportedThreadMessage[] | ExportedThread): ExportedThread {
+  if (Array.isArray(value)) return { messages: value };
+  return {
+    messages: Array.isArray(value.messages) ? value.messages : [],
+    ...(typeof value.title === 'string' ? { title: value.title } : {}),
+    ...(typeof value.updatedAt === 'string' ? { updatedAt: value.updatedAt } : {}),
+  };
+}
 
 /**
  * Read a thread's full message history via `amp threads export <id>`.
@@ -32,8 +50,16 @@ export const exportThreadHistory: ThreadHistoryExporter = (threadId, cwd) => {
         return;
       }
       try {
-        const thread = JSON.parse(Buffer.concat(stdout).toString()) as { messages?: ExportedThreadMessage[] };
-        resolve(Array.isArray(thread.messages) ? thread.messages : []);
+        const thread = JSON.parse(Buffer.concat(stdout).toString()) as {
+          messages?: ExportedThreadMessage[];
+          title?: unknown;
+          updatedAt?: unknown;
+        };
+        resolve({
+          messages: Array.isArray(thread.messages) ? thread.messages : [],
+          ...(typeof thread.title === 'string' ? { title: thread.title } : {}),
+          ...(typeof thread.updatedAt === 'string' ? { updatedAt: thread.updatedAt } : {}),
+        });
       } catch (e) {
         reject(new Error(`failed to parse amp threads export output: ${e}`));
       }
@@ -47,6 +73,24 @@ export const exportThreadHistory: ThreadHistoryExporter = (threadId, cwd) => {
  * `amp threads export`, so an immediate replay after an adapter restart
  * would otherwise come back empty even though the thread is intact.
  */
+export async function exportThreadDetails(
+  exportThread: ThreadHistoryExporter,
+  threadId: string,
+  cwd: string,
+  attempts = 5,
+  delayMs = 2000,
+): Promise<ExportedThread> {
+  let latest: ExportedThread = { messages: [] };
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    latest = normalizeExport(await exportThread(threadId, cwd));
+    if (latest.messages.length > 0) return latest;
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return latest;
+}
+
 export async function exportThreadMessages(
   exportThread: ThreadHistoryExporter,
   threadId: string,
@@ -54,14 +98,8 @@ export async function exportThreadMessages(
   attempts = 5,
   delayMs = 2000,
 ): Promise<ExportedThreadMessage[]> {
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const messages = await exportThread(threadId, cwd);
-    if (messages.length > 0) return messages;
-    if (attempt < attempts - 1) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-  return [];
+  const thread = await exportThreadDetails(exportThread, threadId, cwd, attempts, delayMs);
+  return thread.messages;
 }
 
 /**

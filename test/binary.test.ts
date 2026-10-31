@@ -93,37 +93,59 @@ describe('Binary integration tests', () => {
     }
   });
 
-  it('initialize returns correct capabilities', async () => {
+  it.each([{}, { auth: { terminal: false } }, { terminal: true }])(
+    'initialize returns correct capabilities and legacy auth for client capabilities %j',
+    async (clientCapabilities) => {
+      const resp = await sendAndWait('initialize', {
+        protocolVersion: 1,
+        clientCapabilities,
+      });
+
+      expect(resp.result).toBeDefined();
+      expect(resp.result!.protocolVersion).toBe(1);
+      const agentInfo = resp.result!.agentInfo as Record<string, unknown>;
+      expect(agentInfo).toBeDefined();
+      expect(agentInfo.name).toBe('amp-acp');
+      expect(agentInfo.version).toBeDefined();
+      const caps = resp.result!.agentCapabilities as Record<string, Record<string, boolean>>;
+      expect(caps.promptCapabilities.image).toBe(true);
+      expect(caps.promptCapabilities.embeddedContext).toBe(true);
+      expect(caps.mcpCapabilities.http).toBe(true);
+      expect(caps.mcpCapabilities.sse).toBe(true);
+      const authMethods = resp.result!.authMethods as Array<{
+        id: string;
+        type?: string;
+        name: string;
+        _meta?: { 'terminal-auth'?: { command?: string; args?: string[]; label?: string } };
+      }>;
+      expect(authMethods).toHaveLength(1);
+      expect(authMethods[0].id).toBe('setup');
+      expect(authMethods[0].type).toBeUndefined();
+      expect(authMethods[0].name).toBe('Amp API Key Setup');
+      const command = authMethods[0]._meta?.['terminal-auth']?.command;
+      const label = authMethods[0]._meta?.['terminal-auth']?.label;
+      expect(command).toBeDefined();
+      expect(path.isAbsolute(command!)).toBe(true);
+      expect(command!.startsWith('/$bunfs/')).toBe(false);
+      expect(authMethods[0]._meta?.['terminal-auth']?.args).toEqual(['--setup']);
+      expect(label).toBe('Amp API Key Setup');
+    },
+  );
+
+  it('initialize advertises terminal auth when the client supports it', async () => {
     const resp = await sendAndWait('initialize', {
       protocolVersion: 1,
-      clientCapabilities: {},
+      clientCapabilities: { auth: { terminal: true } },
     });
 
     expect(resp.result).toBeDefined();
-    expect(resp.result!.protocolVersion).toBe(1);
-    const agentInfo = resp.result!.agentInfo as Record<string, unknown>;
-    expect(agentInfo).toBeDefined();
-    expect(agentInfo.name).toBe('amp-acp');
-    expect(agentInfo.version).toBeDefined();
-    const caps = resp.result!.agentCapabilities as Record<string, Record<string, boolean>>;
-    expect(caps.promptCapabilities.image).toBe(true);
-    expect(caps.promptCapabilities.embeddedContext).toBe(true);
-    expect(caps.mcpCapabilities.http).toBe(true);
-    expect(caps.mcpCapabilities.sse).toBe(true);
-    const authMethods = resp.result!.authMethods as Array<{
-      id: string;
-      name: string;
-      _meta?: { 'terminal-auth'?: { command?: string; args?: string[]; label?: string } };
-    }>;
-    expect(authMethods).toHaveLength(1);
-    expect(authMethods[0].id).toBe('setup');
-    expect(authMethods[0].name).toBe('Amp API Key Setup');
-    const command = authMethods[0]._meta?.['terminal-auth']?.command;
-    const label = authMethods[0]._meta?.['terminal-auth']?.label;
-    expect(command).toBeDefined();
-    expect(path.isAbsolute(command!)).toBe(true);
-    expect(command!.startsWith('/$bunfs/')).toBe(false);
-    expect(label).toBe('Amp API Key Setup');
+    expect(resp.result!.authMethods).toEqual([{
+      id: 'setup',
+      type: 'terminal',
+      name: 'Amp API Key Setup',
+      description: 'Run interactive setup to configure your Amp API key',
+      args: ['--setup'],
+    }]);
   });
 
   it('session/new returns sessionId and config options', async () => {

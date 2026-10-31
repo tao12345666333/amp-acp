@@ -44,6 +44,14 @@ import {
 } from './thread-mapping-store.js';
 import { discoverPluginModes as discoverPluginModesFromDir, type PluginAgentMode } from './plugin-modes.js';
 import { TurnUsage } from './turn-usage.js';
+import {
+  contextWindowSize,
+  isMcpProblemStatus,
+  mcpNoticeSeverity,
+  mcpStatusReports,
+  permissionDenialNames,
+  stopReasonFromAssistant,
+} from './turn-events.js';
 import { toAcpNotifications } from './to-acp.js';
 import { exportThreadHistory, exportThreadMessages, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
 import path from 'node:path';
@@ -268,6 +276,8 @@ interface SessionState {
   executor: Executor;
   mcpConfig: AmpMcpConfig;
   cwd: string;
+  /** Last reported status per MCP server, used to avoid repeating notices. */
+  mcpStatuses: Map<string, string>;
 }
 
 interface InitializeResponseWithAgentInfo extends InitializeResponse {
@@ -389,6 +399,7 @@ export class AmpAcpAgent implements Agent {
       executor: 'local',
       mcpConfig,
       cwd,
+      mcpStatuses: new Map(),
     };
     this.sessions.set(sessionId, session);
 
@@ -495,6 +506,7 @@ export class AmpAcpAgent implements Agent {
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd,
+      mcpStatuses: new Map(),
     };
   }
 
@@ -535,6 +547,100 @@ export class AmpAcpAgent implements Agent {
     const session = this.sessionFromMapping(mapping, params);
     this.sessions.set(params.sessionId, session);
     return { configOptions: buildSessionConfigOptions(session) };
+  }
+
+  private supportsNotices(): boolean {
+    return this.clientCapabilities?.session?.notices != null;
+  }
+
+  /** Prefer an ACP notice when supported; otherwise keep the text in the transcript. */
+  private async sendAdvisory(
+    sessionId: string,
+    severity: 'info' | 'warning' | 'error',
+    title: string,
+    description?: string,
+  ): Promise<void> {
+    try {
+      if (this.supportsNotices()) {
+        await this.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: 'notice',
+            severity,
+            title,
+            ...(description ? { description } : {}),
+          },
+        });
+        return;
+      }
+      const text = description ? `${title}\n${description}` : title;
+      await this.client.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text },
+        },
+      });
+    } catch (e) {
+      console.error('[acp] failed to send advisory update', e);
+    }
+  }
+
+  private async sendMcpNotices(
+    sessionId: string,
+    s: SessionState,
+    message: { type?: string; subtype?: string; mcp_servers?: unknown },
+  ): Promise<void> {
+    if (message.type !== 'system' || message.subtype !== 'init') return;
+    const reports = mcpStatusReports(message.mcp_servers);
+    if (reports.length === 0) return;
+
+    const problems = reports.filter(
+      (report) => isMcpProblemStatus(report.status) && s.mcpStatuses.get(report.name) !== report.status,
+    );
+    for (const report of reports) s.mcpStatuses.set(report.name, report.status);
+    if (problems.length === 0) return;
+
+    const severity = problems.some((report) => mcpNoticeSeverity(report.status) === 'error') ? 'error' : 'warning';
+    const title = problems.length === 1 ? 'MCP server unavailable' : `${problems.length} MCP servers unavailable`;
+    const description = `${problems.map((report) => `${report.name}: ${report.status}`).join('\n')}\nReview this session's MCP configuration.`;
+    await this.sendAdvisory(sessionId, severity, title, description);
+  }
+
+  private async sendPermissionDenialNotice(
+    sessionId: string,
+    message: { type?: string; permission_denials?: unknown },
+  ): Promise<void> {
+    if (message.type !== 'result') return;
+    const names = [...new Set(permissionDenialNames(message.permission_denials))];
+    if (names.length === 0) return;
+    await this.sendAdvisory(
+      sessionId,
+      'warning',
+      'Amp permission denied',
+      `Blocked tool calls: ${names.join(', ')}. Check the session's Amp permission settings.`,
+    );
+  }
+
+  private async sendUsageUpdate(
+    sessionId: string,
+    turnUsage: TurnUsage,
+    previous: { used: number; size: number } | null,
+  ): Promise<{ used: number; size: number } | null> {
+    const used = turnUsage.latestContextTokens();
+    if (used === null) return previous;
+    const size = contextWindowSize();
+    if (previous?.used === used && previous.size === size) return previous;
+    try {
+      await this.client.sessionUpdate({
+        sessionId,
+        update: { sessionUpdate: 'usage_update', used, size },
+      });
+      return { used, size };
+    } catch (e) {
+      console.error('[acp] failed to send usage_update', e);
+      return previous;
+    }
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
@@ -667,10 +773,21 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
     }
 
     const turnUsage = new TurnUsage();
+    let lastUsage: { used: number; size: number } | null = null;
+    let stopReason: PromptResponse['stopReason'] = 'end_turn';
 
     try {
       for await (const message of transport.execute({ prompt: textInput, ...(hasImages ? { content } : {}), options, signal: turn.controller.signal })) {
         turnUsage.add(message);
+        await this.sendMcpNotices(params.sessionId, s, message);
+        await this.sendPermissionDenialNotice(params.sessionId, message);
+        if (message.type === 'assistant') {
+          const mappedStopReason = stopReasonFromAssistant(message.message?.stop_reason);
+          if (mappedStopReason) stopReason = mappedStopReason;
+        }
+        if (message.type === 'result' && message.subtype === 'error_max_turns') {
+          stopReason = 'max_turn_requests';
+        }
         if (message.session_id) {
           if (!isAmpThreadId(message.session_id)) {
             throw new Error(`Amp returned an invalid thread ID: ${message.session_id}`);
@@ -705,10 +822,12 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
             update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Error: ${message.error}` } },
           });
         }
+
+        lastUsage = await this.sendUsageUpdate(params.sessionId, turnUsage, lastUsage);
       }
 
       const usage = turnUsage.toAcp();
-      return { stopReason: turn.cancelled ? 'cancelled' : 'end_turn', ...(usage ? { usage } : {}) };
+      return { stopReason: turn.cancelled ? 'cancelled' : stopReason, ...(usage ? { usage } : {}) };
     } catch (err) {
       if (turn.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };

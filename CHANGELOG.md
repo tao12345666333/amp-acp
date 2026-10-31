@@ -7,6 +7,9 @@
 - Add a `reasoning-effort` ACP config option for local CLI sessions with `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the selection to Amp as the `--features effort:<value>` thread feature and persists it across `session/load` and `session/resume`.
 - Stream Amp thinking blocks as ACP `agent_thought_chunk` updates by default. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead.
 - Serialize concurrent `session/prompt` requests per session, queue up to 32 follow-up prompts, and cancel both the active turn and queued prompts on `session/cancel`.
+- Stream ACP `usage_update` events for the latest model call's context usage. Set `AMP_ACP_CONTEXT_WINDOW_SIZE` to match the model's context window; the default is `200000`.
+- Map Amp `max_tokens` and `error_max_turns` to the corresponding ACP stop reasons instead of always returning `end_turn`.
+- Report failed, denied, or registry-blocked MCP servers and Amp permission denials as ACP `notice` updates when the client advertises `session.notices`, with an agent-message fallback otherwise.
 
 ## 0.10.0 - 2026-10-09
 

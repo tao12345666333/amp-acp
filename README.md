@@ -99,6 +99,15 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
+- **Context usage and notices** — stream `usage_update` from the latest model call and map Amp stop reasons (`max_tokens`, `max_turn_requests`); report failed MCP servers and permission denials as ACP notices when the client supports them
+
+### Context usage and session notices
+
+While a turn runs, amp-acp sends an ACP `usage_update` whenever the latest model call reports different context usage. `used` is that response's input, cache-read, cache-write, and output tokens; `size` comes from `AMP_ACP_CONTEXT_WINDOW_SIZE` and defaults to a conservative `200000`. Set the variable to the context window of the model you use if your client should display a more precise percentage. The final token totals remain available on `PromptResponse.usage`.
+
+Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. Other execution errors keep their error message instead of being reported as a refusal.
+
+When the client advertises `clientCapabilities.session.notices`, failed, denied, or registry-blocked MCP servers and Amp permission denials are sent as live `notice` updates. Clients without that capability receive the same information as an ordinary agent message so it stays visible in the transcript.
 
 ### Image prompts
 

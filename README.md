@@ -5,7 +5,7 @@
 
 ![Screenshot](img/screenshot.png)
 
-Use [Amp](https://ampcode.com) from [ACP](https://agentclientprotocol.com/)-compatible clients such as [Zed](https://zed.dev) or [Toad](https://github.com/batrachianai/toad).
+Use [Amp](https://ampcode.com) from any [ACP](https://agentclientprotocol.com/)-compatible client. The 0.11 release is an ACP v1 adapter and has been verified with [T3 Code](https://github.com/pingdotgg/t3code), [Zed](https://zed.dev), and [Lody](https://github.com/LodyAI/Lody).
 
 ## Prerequisites
 
@@ -17,6 +17,18 @@ amp --version
 ```
 
 If your editor does not inherit your shell `PATH`, set `AMP_CLI_PATH` to the absolute path printed by `command -v amp` (macOS/Linux) or `where amp` (Windows).
+
+## Verified clients
+
+amp-acp 0.11.0 speaks ACP v1. The release was exercised against a real Amp CLI in these clients; they can connect through the same stdio entry point, with no client-specific adapter build:
+
+| Client | How it connects | Verified ACP workflows |
+|---|---|---|
+| [T3 Code](https://github.com/pingdotgg/t3code) (Beta) | Local ACP provider | Sessions, prompt queue, cancellation, native cancel-then-prompt steering, plan updates, rich tool output |
+| [Zed](https://zed.dev) | External agent and ACP Registry | Sessions, MCP passthrough, image prompts, reasoning effort, slash commands, session load/resume |
+| [Lody](https://github.com/LodyAI/Lody) | Custom ACP agent | Sessions, tool calls, reasoning effort, cancellation, native cancel-then-prompt steering |
+
+The clients share the adapter's ACP v1 session lifecycle. ACP v2 support is experimental and is not enabled in this release.
 
 ## Installation
 
@@ -76,6 +88,10 @@ Download the binary for your platform, make it executable (`chmod +x` on Linux/m
 ```
 
 Requires Node.js 18+.
+
+### Other ACP clients
+
+T3 Code, Lody, and other ACP v1 clients can register the same executable as a custom stdio agent. Use the downloaded binary or `npx -y amp-acp` as the command, and pass `AMP_CLI_PATH` in the agent environment when the client does not inherit your shell `PATH`. The adapter does not require a client-specific build.
 
 ## Authentication
 

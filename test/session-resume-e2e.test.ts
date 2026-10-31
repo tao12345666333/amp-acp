@@ -142,6 +142,12 @@ describe('durable session resume across adapter restarts', () => {
         });
         sessionId = session.sessionId;
 
+        await agent.request(methods.agent.session.setConfigOption, {
+          sessionId,
+          configId: 'reasoning-effort',
+          value: 'xhigh',
+        });
+
         const turn = await agent.request(methods.agent.session.prompt, {
           sessionId,
           prompt: [{ type: 'text', text: 'first turn' }],
@@ -168,6 +174,7 @@ describe('durable session resume across adapter restarts', () => {
       threadId: string;
       mode?: string;
       model?: string;
+      effort?: string;
       executor?: string;
       cwd?: string;
     };
@@ -176,6 +183,7 @@ describe('durable session resume across adapter restarts', () => {
       threadId: THREAD_ID,
       mode: 'default',
       model: 'medium',
+      effort: 'xhigh',
       executor: 'local',
       cwd: fixtureDir,
     });
@@ -195,6 +203,10 @@ describe('durable session resume across adapter restarts', () => {
           mcpServers: [],
         });
         expect(Array.isArray(resume.configOptions)).toBe(true);
+        const resumedOptions = new Map(
+          (resume.configOptions ?? []).map((option) => [option.id, option.currentValue]),
+        );
+        expect(resumedOptions.get('reasoning-effort')).toBe('xhigh');
 
         const turn = await agent.request(methods.agent.session.prompt, {
           sessionId,
@@ -249,6 +261,9 @@ describe('durable session resume across adapter restarts', () => {
     expect(executions[0]!.argv).not.toContain('continue');
     expect(executions[1]!.argv.slice(0, 3)).toEqual(['threads', 'continue', THREAD_ID]);
     expect(executions[1]!.prompt).toBe('second turn');
+    const featuresIndex = executions[1]!.argv.indexOf('--features');
+    expect(featuresIndex).toBeGreaterThanOrEqual(0);
+    expect(executions[1]!.argv[featuresIndex + 1]).toBe('effort:xhigh');
     expect(archives.map((entry) => entry.argv)).toContainEqual([
       'threads',
       'archive',

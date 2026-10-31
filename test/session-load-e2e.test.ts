@@ -156,6 +156,11 @@ describe('session/load across adapter restarts', () => {
           configId: 'amp-mode',
           value: 'high',
         });
+        await agent.request(methods.agent.session.setConfigOption, {
+          sessionId,
+          configId: 'reasoning-effort',
+          value: 'xhigh',
+        });
 
         const turn = await agent.request(methods.agent.session.prompt, {
           sessionId,
@@ -178,6 +183,7 @@ describe('session/load across adapter restarts', () => {
       threadId: THREAD_ID,
       mode: 'default',
       model: 'high',
+      effort: 'xhigh',
       executor: 'local',
       cwd: fixtureDir,
     });
@@ -201,6 +207,7 @@ describe('session/load across adapter restarts', () => {
         );
         expect(byId.get('amp-mode')).toBe('high');
         expect(byId.get('permission')).toBe('default');
+        expect(byId.get('reasoning-effort')).toBe('xhigh');
 
         // The pre-restart transcript must have been replayed as updates.
         const replayed = second.updates
@@ -249,6 +256,10 @@ describe('session/load across adapter restarts', () => {
     const modeIndex = followUp.argv.indexOf('--mode');
     expect(modeIndex).toBeGreaterThanOrEqual(0);
     expect(followUp.argv[modeIndex + 1]).toBe('high');
+    const featuresIndex = followUp.argv.indexOf('--features');
+    expect(featuresIndex).toBeGreaterThanOrEqual(0);
+    expect(followUp.argv[featuresIndex + 1]).toBe('effort:xhigh');
+    expect(followUp.argv).toContain('--stream-json-thinking');
 
     // The load must have exported exactly the mapped thread's history.
     const exports = invocations.filter((i) => i.argv[0] === 'threads' && i.argv[1] === 'export');

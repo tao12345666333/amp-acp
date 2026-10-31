@@ -143,13 +143,31 @@ describe('Binary integration tests', () => {
       'execution-environment',
       'permission',
       'amp-mode',
+      'reasoning-effort',
     ]);
-    expect(configOptions.map((option) => option.category)).toEqual(['mode', 'mode', 'model']);
+    expect(configOptions.map((option) => option.category)).toEqual([
+      'mode',
+      'mode',
+      'model',
+      'thought_level',
+    ]);
     const executor = configOptions.find((option) => option.id === 'execution-environment')!;
     expect(executor.currentValue).toBe('local');
     expect(executor.options?.map((option) => option.value)).toEqual(['local', 'orb']);
     const mode = configOptions.find((option) => option.id === 'amp-mode')!;
     expect(mode.currentValue).toBe('medium');
+    const effort = configOptions.find((option) => option.id === 'reasoning-effort')!;
+    expect(effort.currentValue).toBe('auto');
+    expect(effort.options?.map((option) => option.value)).toEqual([
+      'auto',
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
     // Built-in modes always come first; agent modes registered by plugins
     // installed on the machine running the test are appended after them.
     const values = mode.options?.map((option) => option.value) ?? [];
@@ -175,6 +193,25 @@ describe('Binary integration tests', () => {
     expect(mode.currentValue).toBe('low');
     const values = mode.options?.map((option) => option.value) ?? [];
     expect(values.slice(0, 4)).toEqual(['low', 'medium', 'high', 'ultra']);
+  });
+
+  it('session/set_config_option updates reasoning effort', async () => {
+    const sessionResp = await sendAndWait('session/new', {
+      cwd: '/tmp/test',
+      mcpServers: [],
+    });
+    const sessionId = sessionResp.result!.sessionId as string;
+
+    const resp = await sendAndWait('session/set_config_option', {
+      sessionId,
+      configId: 'reasoning-effort',
+      value: 'xhigh',
+    });
+
+    expect(resp.result).toBeDefined();
+    const configOptions = resp.result!.configOptions as Array<{ id: string; currentValue?: string }>;
+    const effort = configOptions.find((option) => option.id === 'reasoning-effort')!;
+    expect(effort.currentValue).toBe('xhigh');
   });
 
   it('session/new with MCP servers returns valid sessionId', async () => {

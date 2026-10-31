@@ -102,6 +102,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Session metadata** — each session publishes a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn via `session_info_update`; both are persisted with the session mapping and restored on load or resume
 - **Session discovery and lifecycle** — `session/list` returns persisted sessions (including new sessions that have not started an Amp thread yet), while `session/delete` and `session/close` cancel active and queued work. Delete removes only amp-acp's local mapping; the Amp thread itself is retained
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
+- **Native steering** — local CLI sessions keep the Amp process alive across cancellation and send the replacement prompt with Amp's `steer` marker instead of queuing it as ordinary input
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
 - **Context usage and notices** — stream `usage_update` from the latest model call and map Amp stop reasons (`max_tokens`, `max_turn_requests`); report failed MCP servers and permission denials as ACP notices when the client supports them
 - **Live plan updates** — Amp todo tool calls become ACP `plan` updates with the complete todo list, so clients can render progress instead of a raw tool call. Identical consecutive plans are suppressed
@@ -233,7 +234,7 @@ ACP v1 describes `session/prompt` as a long-running request, so most clients wai
 - Up to 32 follow-up prompts are queued in arrival order.
 - When the active turn finishes, the next queued prompt starts and continues the same Amp thread.
 - `session/cancel` aborts the active turn and resolves every queued prompt with `stopReason: "cancelled"` without starting them.
-- A prompt sent after cancellation starts a new turn.
+- A prompt sent after cancellation starts a new turn; with `AMP_ACP_CANCEL_MODE=steer`, it is delivered to the still-running local Amp process as a steer instruction.
 - A 33rd pending prompt is rejected with an invalid-params error instead of growing memory without bound.
 
 The queue is internal to amp-acp and requires no new ACP capability. ACP v2 has native prompt queueing and steering; this is the v1 compatibility path.
@@ -254,7 +255,11 @@ The response is one of:
 
 For `startedNewTurn` and `queued`, the adapter sends `_amp/session/steer_applied` with `{sessionId, steerId}` when the message starts. If a queued steer is cancelled or its turn fails, the adapter sends `_amp/session/steer_failed` with `{sessionId, steerId, reason}`. Prompt blocks are validated before the steer is accepted, so malformed text, resource, or image entries return an invalid-params error instead of starting a turn that immediately fails.
 
-This is a next-turn extension, not live mid-turn injection. Amp's CLI keeps its process alive under `--stream-json-input` but emits no per-turn `result` message, so amp-acp still runs one process per turn and cannot safely detect a turn boundary for in-process steering. Orb execution does not support streaming input at all.
+This is a next-turn extension, not live mid-turn injection. Amp's CLI keeps its process alive under `--stream-json-input`, and amp-acp now reuses one local process per ACP session. It still cannot safely detect a turn boundary for arbitrary in-process steering, so overlapping prompts remain queued.
+
+### Native cancel-then-prompt steering
+
+Native steering uses the CLI transport because Amp exposes the steer marker through `--stream-json-input`. Set `AMP_ACP_CANCEL_MODE=steer` for clients that represent steering as ACP cancellation followed immediately by another prompt. In that mode, the adapter keeps the input stream alive and the replacement prompt writes `{"steer":true}` to the active Amp process instead of arriving as ordinary queued input. Closing the ACP connection still terminates the process, and cancellation without a replacement leaves it idle. Without the setting, cancellation terminates Amp as required by the standard ACP stop behavior. Orb execution does not support streaming input, and the SDK compatibility transport does not expose the steer marker.
 
 ### Slash commands
 

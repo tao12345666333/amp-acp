@@ -9,5 +9,21 @@ export function runAcp(): void {
     input as unknown as WritableStream<Uint8Array>,
     output as unknown as ReadableStream<Uint8Array>,
   );
-  new AgentSideConnection((client) => new AmpAcpAgent(client), stream);
+  let agent: AmpAcpAgent | undefined;
+  const connection = new AgentSideConnection((client) => {
+    agent = new AmpAcpAgent(client);
+    return agent;
+  }, stream);
+
+  const close = () => agent?.close();
+  void connection.closed.finally(close);
+  process.once('exit', close);
+  process.once('SIGINT', () => {
+    close();
+    process.exit(130);
+  });
+  process.once('SIGTERM', () => {
+    close();
+    process.exit(143);
+  });
 }

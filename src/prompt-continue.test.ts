@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
+import type { AmpExecutionOptions, AmpExecutionRequest, AmpTransport } from './amp-transport.js';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
-import type { AmpExecutionOptions, AmpTransport } from './amp-transport.js';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
 const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
@@ -102,6 +102,166 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.mode).toBe('low');
+  });
+
+  it('restarts the CLI process after a config change', async () => {
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute() {
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    await expect(agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-mode',
+      value: 'high',
+    })).resolves.toMatchObject({ configOptions: expect.any(Array) });
+    expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
+  });
+
+  it('allows config changes after cancellation before Amp reports its thread ID', async () => {
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute(request) {
+        await new Promise<void>((resolve) => {
+          request.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Amp CLI prompt was cancelled');
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const prompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    while (!agent.sessions.get(session.sessionId)?.active) await Promise.resolve();
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await prompt).stopReason).toBe('cancelled');
+
+    await expect(agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'permission',
+      value: 'bypass',
+    })).resolves.toMatchObject({ configOptions: expect.any(Array) });
+    expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
+  });
+
+  it('steers after cancellation before Amp reports its thread ID', async () => {
+    const requests: AmpExecutionRequest[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      supportsSteering: true,
+      async *execute(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          await new Promise<void>((resolve) => {
+            request.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          throw new Error('Amp CLI prompt was cancelled');
+        }
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const firstPrompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'first' }],
+    });
+    while (!agent.sessions.get(session.sessionId)?.active) await Promise.resolve();
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await firstPrompt).stopReason).toBe('cancelled');
+
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'change direction' }],
+    });
+
+    expect(requests.map(({ options, steer }) => ({ continue: options.continue, steer }))).toEqual([
+      { continue: undefined, steer: false },
+      { continue: undefined, steer: true },
+    ]);
+  });
+
+  it('does not steer after cancellation when the transport terminates the process', async () => {
+    const requests: AmpExecutionRequest[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          await new Promise<void>((resolve) => {
+            request.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          throw new Error('Amp CLI prompt was cancelled');
+        }
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const firstPrompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'first' }],
+    });
+    while (!agent.sessions.get(session.sessionId)?.active) await Promise.resolve();
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await firstPrompt).stopReason).toBe('cancelled');
+
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'try again' }],
+    });
+
+    expect(requests.map(({ steer }) => steer)).toEqual([false, false]);
+  });
+
+  it('keeps an immediate steering replacement cancellable while the old prompt unwinds', async () => {
+    let releaseCancelledPrompt!: () => void;
+    const cancelledPromptReleased = new Promise<void>((resolve) => {
+      releaseCancelledPrompt = resolve;
+    });
+    const requests: AmpExecutionRequest[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      supportsSteering: true,
+      async *execute(request) {
+        requests.push(request);
+        await new Promise<void>((resolve) => {
+          request.signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+        if (requests[0] === request) await cancelledPromptReleased;
+        throw new Error('Amp CLI prompt was cancelled');
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const firstPrompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'first' }],
+    });
+    while (requests.length < 1) await Promise.resolve();
+    await agent.cancel({ sessionId: session.sessionId });
+
+    const replacementPrompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'change direction' }],
+    });
+    while (requests.length < 2) await Promise.resolve();
+    releaseCancelledPrompt();
+    expect((await firstPrompt).stopReason).toBe('cancelled');
+
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await replacementPrompt).stopReason).toBe('cancelled');
   });
 
   it('passes selected permission config to the SDK', async () => {
@@ -300,7 +460,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     });
   });
 
-  it('preserves thread and local-only options when switching between local and Orb', async () => {
+  it('restarts the local CLI process before switching execution environment', async () => {
     process.env.AMP_ACP_ORB_PROJECT = 'acme/widgets';
     const localCalls: { options: Record<string, unknown> }[] = [];
     const localTransport = {
@@ -327,40 +487,20 @@ describe('AmpAcpAgent prompt() continue option', () => {
     });
 
     await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'local' }] });
-    await agent.setSessionConfigOption({
+    await expect(agent.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'execution-environment',
       value: 'orb',
-    });
-    await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'orb' }] });
-    await agent.setSessionConfigOption({
-      sessionId: session.sessionId,
-      configId: 'execution-environment',
-      value: 'local',
-    });
-    await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'local again' }] });
+    })).resolves.toMatchObject({ configOptions: expect.any(Array) });
+    expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
 
-    expect(localCalls).toHaveLength(2);
+    expect(localCalls).toHaveLength(1);
     expect(localCalls[0]!.options).toMatchObject({
       executor: 'local',
       dangerouslyAllowAll: true,
       mcpConfig: { local: { command: 'node', args: ['server.js'] } },
     });
-    expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options).toMatchObject({
-      executor: 'orb',
-      project: 'acme/widgets',
-      continue: threadId,
-    });
-    expect(capturedCalls[0]!.options.dangerouslyAllowAll).toBeUndefined();
-    expect(capturedCalls[0]!.options.mcpConfig).toBeUndefined();
-    expect(localCalls[1]!.options).toMatchObject({
-      executor: 'local',
-      continue: threadId,
-      dangerouslyAllowAll: true,
-      mcpConfig: { local: { command: 'node', args: ['server.js'] } },
-    });
-    expect(localCalls[1]!.options.project).toBeUndefined();
+    expect(capturedCalls).toHaveLength(0);
   });
 
   it('sets continue=true on first prompt when AMP_ACP_CONTINUE_LATEST is set', async () => {
@@ -390,5 +530,62 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(capturedCalls).toHaveLength(2);
     expect(capturedCalls[0]!.options.continue).toBe(true);
     expect(capturedCalls[1]!.options.continue).toBe(threadId);
+  });
+
+  it('marks the prompt after cancellation as a steer into the active Amp thread', async () => {
+    const requests: AmpExecutionRequest[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      supportsSteering: true,
+      async *execute(request) {
+        requests.push(request);
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        if (requests.length === 1) {
+          await new Promise<void>((resolve) => {
+            if (request.signal.aborted) {
+              resolve();
+              return;
+            }
+            request.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          throw new Error('Amp CLI process was aborted');
+        }
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport, {
+      threadStore: {
+        load: async (sessionId) => mappings.get(sessionId) ?? null,
+        save: async (mapping) => {
+          mappings.set(mapping.sessionId, mapping);
+        },
+      },
+    });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const firstPrompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'first' }],
+    });
+
+    while (agent.sessions.get(session.sessionId)?.threadId !== threadId) {
+      await Promise.resolve();
+    }
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await firstPrompt).stopReason).toBe('cancelled');
+
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'change direction' }],
+    });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'later follow-up' }],
+    });
+
+    expect(requests.map(({ options, steer }) => ({ continue: options.continue, steer }))).toEqual([
+      { continue: undefined, steer: false },
+      { continue: threadId, steer: true },
+      { continue: threadId, steer: false },
+    ]);
   });
 });

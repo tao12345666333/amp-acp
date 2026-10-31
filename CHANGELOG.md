@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Serialize concurrent `session/prompt` requests per session, queue up to 32 follow-up prompts, and cancel both the active turn and queued prompts on `session/cancel`.
+
 ## 0.10.0 - 2026-10-09
 
 ### Added

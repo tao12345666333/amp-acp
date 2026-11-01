@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add an opt-in experimental ACP v2 adapter (`AMP_ACP_PROTOCOL=v2`) that returns `messageId` from `session/prompt`, streams `state_update` transitions, exposes v2 config options, and translates v1 plan and tool-call updates. ACP v1 remains the default.
+
 ## 0.11.0 - 2026-11-01
 
 ### Added

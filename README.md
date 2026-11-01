@@ -5,7 +5,7 @@
 
 ![Screenshot](img/screenshot.png)
 
-Use [Amp](https://ampcode.com) from any [ACP](https://agentclientprotocol.com/)-compatible client. The 0.11 release is an ACP v1 adapter and has been verified with [T3 Code](https://github.com/pingdotgg/t3code), [Zed](https://zed.dev), and [Lody](https://github.com/LodyAI/Lody).
+Use [Amp](https://ampcode.com) from any [ACP](https://agentclientprotocol.com/)-compatible client. The 0.12 release keeps ACP v1 as the default and adds an opt-in experimental ACP v2 adapter. ACP v1 has been verified with [T3 Code](https://github.com/pingdotgg/t3code), [Zed](https://zed.dev), and [Lody](https://github.com/LodyAI/Lody).
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ If your editor does not inherit your shell `PATH`, set `AMP_CLI_PATH` to the abs
 
 ## Verified clients
 
-amp-acp 0.11.0 speaks ACP v1. The release was exercised against a real Amp CLI in these clients; they can connect through the same stdio entry point, with no client-specific adapter build:
+amp-acp 0.12.0 speaks ACP v1 by default. The release was exercised against a real Amp CLI in these clients; they can connect through the same stdio entry point, with no client-specific adapter build:
 
 | Client | How it connects | Verified ACP workflows |
 |---|---|---|
@@ -28,7 +28,7 @@ amp-acp 0.11.0 speaks ACP v1. The release was exercised against a real Amp CLI i
 | [Zed](https://zed.dev) | External agent and ACP Registry | Sessions, MCP passthrough, image prompts, reasoning effort, slash commands, session load/resume |
 | [Lody](https://github.com/LodyAI/Lody) | Custom ACP agent | Sessions, tool calls, reasoning effort, cancellation, native cancel-then-prompt steering |
 
-The clients share the adapter's ACP v1 session lifecycle. ACP v2 support is experimental and is not enabled in this release.
+The clients share the adapter's ACP v1 session lifecycle. Set `AMP_ACP_PROTOCOL=v2` to opt into the experimental ACP v2 bridge; Zed and Lody currently negotiate ACP v1.
 
 ## Installation
 
@@ -111,6 +111,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
+- **Experimental ACP v2** — set `AMP_ACP_PROTOCOL=v2` to serve the v2 draft instead of v1. The bridge returns `messageId` immediately, streams `state_update` transitions, and translates v1 plan and tool-call updates to v2 shapes
 - **Steering extension** — clients that support `_amp/session/steer` can add a message to a running session; it is delivered as the next turn
 - **Slash commands** — `/init` generates an `AGENTS.md`; Amp's built-in `/review`, `/ship`, `/update-base`, and `/refactor-commits` prompts are advertised and passed through unchanged
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session

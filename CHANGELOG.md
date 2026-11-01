@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-11-01
+
 ### Added
 
 - Add an opt-in experimental ACP v2 adapter (`AMP_ACP_PROTOCOL=v2`) that returns `messageId` from `session/prompt`, streams `state_update` transitions, exposes v2 config options, and translates v1 plan and tool-call updates. ACP v1 remains the default.
@@ -9,6 +11,21 @@
 ### Changed
 
 - Update `@agentclientprotocol/sdk` from 1.7.0 to 1.9.0, the final 1.x release. ACP v1 remains the default; the experimental v2 bridge includes the SDK's latest schema and negotiation fixes.
+
+### Compatibility
+
+- ACP v1 remains the default for Zed, Lody, T3 Code, and existing clients. No client configuration changes are required.
+- ACP v2 is opt-in and experimental. The bridge returns `messageId` immediately, reports turns through `state_update`, and translates v1 plan and tool-call updates; it is not a native v2 implementation.
+- `session/list` returns an empty list through the v2 bridge, and v2 permission prompts are not translated yet.
+- SDK 2.x is not part of this release. The adapter stays on the final 1.x SDK to avoid the SDK 2 legacy connection API removal.
+
+### Verification
+
+- `bun run lint`
+- `bun run build`
+- `bun test src/` — 213 pass, 0 fail
+- `bun run test:binary` — 16 pass, 3 skipped, 0 fail
+- The compiled-binary ACP v2 e2e test covers initialize, `session/new`, immediate `messageId`, user message echo, and idle `state_update`.
 
 ## 0.11.0 - 2026-11-01
 

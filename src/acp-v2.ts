@@ -256,12 +256,13 @@ export class AcpV2Adapter {
     stopReason: PromptResponse['stopReason'],
     usage: PromptResponse['usage'],
   ): void {
+    // SDK 1.9 narrows the v2 idle state union separately from the v1 stop reason.
     void this.sendUpdate(sessionId, {
       sessionUpdate: 'state_update',
       state: 'idle',
       stopReason,
       usage: usage as unknown as v2.Usage,
-    }).finally(() => this.releaseTurn(sessionId));
+    } as v2.SessionUpdate).finally(() => this.releaseTurn(sessionId));
   }
 
   private failTurn(sessionId: string, error: unknown): void {

@@ -6,6 +6,10 @@
 
 - Add an opt-in experimental ACP v2 adapter (`AMP_ACP_PROTOCOL=v2`) that returns `messageId` from `session/prompt`, streams `state_update` transitions, exposes v2 config options, and translates v1 plan and tool-call updates. ACP v1 remains the default.
 
+### Changed
+
+- Update `@agentclientprotocol/sdk` from 1.7.0 to 1.9.0, the final 1.x release. ACP v1 remains the default; the experimental v2 bridge includes the SDK's latest schema and negotiation fixes.
+
 ## 0.11.0 - 2026-11-01
 
 ### Added

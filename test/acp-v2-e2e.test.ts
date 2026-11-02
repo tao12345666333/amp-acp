@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { FileThreadMappingStore } from '../src/thread-mapping-store.js';
 
 const BINARY_PATH = path.resolve(__dirname, '../dist/amp-acp-test');
 
@@ -53,43 +54,51 @@ async function stopProcess(process: ChildProcess): Promise<void> {
   ]);
 }
 
+function startClient(stateDir: string) {
+  const process = spawn(BINARY_PATH, [], {
+    cwd: fixtureDir,
+    env: {
+      ...globalThis.process.env,
+      AMP_ACP_PROTOCOL: 'v2',
+      AMP_ACP_TRANSPORT: 'cli',
+      AMP_CLI_PATH: fakeAmpPath,
+      AMP_API_KEY: 'test-key',
+      AMP_ACP_STATE_DIR: stateDir,
+      AMP_ACP_DISABLE_PLUGIN_LIST: '1',
+      AMP_ACP_SYSTEM_PLUGIN_DIR: path.join(fixtureDir, 'no-plugins'),
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const messages: JsonRpcMessage[] = [];
+  let buffer = '';
+  process.stdout!.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop()!;
+    for (const line of lines) {
+      if (line.trim()) messages.push(JSON.parse(line) as JsonRpcMessage);
+    }
+  });
+
+  const send = (id: number, method: string, params: Record<string, unknown>): void => {
+    process.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  };
+  const waitFor = async (predicate: (message: JsonRpcMessage) => boolean): Promise<JsonRpcMessage> => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const message = messages.find(predicate);
+      if (message) return message;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('timed out waiting for ACP v2 message');
+  };
+
+  return { process, messages, send, waitFor };
+}
+
 describe('ACP v2 adapter', () => {
   it('answers initialize with protocol version 2 and streams an idle turn', async () => {
-    const process = spawn(BINARY_PATH, [], {
-      cwd: fixtureDir,
-      env: {
-        ...globalThis.process.env,
-        AMP_ACP_PROTOCOL: 'v2',
-        AMP_ACP_TRANSPORT: 'cli',
-        AMP_CLI_PATH: fakeAmpPath,
-        AMP_API_KEY: 'test-key',
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const messages: JsonRpcMessage[] = [];
-    let buffer = '';
-    process.stdout!.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop()!;
-      for (const line of lines) {
-        if (line.trim()) messages.push(JSON.parse(line) as JsonRpcMessage);
-      }
-    });
-
-    const send = (id: number, method: string, params: Record<string, unknown>): void => {
-      process.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-    };
-    const waitFor = async (predicate: (message: JsonRpcMessage) => boolean): Promise<JsonRpcMessage> => {
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline) {
-        const message = messages.find(predicate);
-        if (message) return message;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      throw new Error('timed out waiting for ACP v2 message');
-    };
-
+    const { process, messages, send, waitFor } = startClient(path.join(fixtureDir, 'prompt-state'));
     try {
       send(1, 'initialize', {
         protocolVersion: 2,
@@ -136,6 +145,48 @@ describe('ACP v2 adapter', () => {
             (message.params?.update as { content?: { text?: string } }).content?.text === 'v2 reply: hello v2',
         ),
       ).toBe(true);
+    } finally {
+      await stopProcess(process);
+    }
+  });
+
+  it('lists persisted sessions with directory filtering, metadata, and pagination', async () => {
+    const stateDir = path.join(fixtureDir, 'list-state');
+    const store = new FileThreadMappingStore(stateDir);
+    const sessions = Array.from({ length: 51 }, (_, index) => ({
+      sessionId: `S-list-${String(index).padStart(6, '0')}`,
+      threadId: null,
+      cwd: fixtureDir,
+      title: `Session ${index}`,
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+    }));
+    await Promise.all(sessions.map((session) => store.save(session)));
+    await store.save({ sessionId: 'S-other-000000', threadId: null, cwd: '/other-project' });
+
+    const { process, send, waitFor } = startClient(stateDir);
+    try {
+      send(1, 'initialize', { protocolVersion: 2, info: { name: 'v2-list-test', version: '0.0.0' }, capabilities: {} });
+      expect((await waitFor((message) => message.id === 1)).result?.protocolVersion).toBe(2);
+
+      send(2, 'session/list', { cwd: fixtureDir });
+      const firstPage = await waitFor((message) => message.id === 2);
+      const expected = sessions.toReversed().map(({ threadId, ...session }) => session);
+      expect(firstPage.result?.sessions).toEqual(expected.slice(0, 50));
+      expect(typeof firstPage.result?.nextCursor).toBe('string');
+
+      send(3, 'session/list', { cwd: fixtureDir, cursor: firstPage.result?.nextCursor });
+      expect((await waitFor((message) => message.id === 3)).result).toEqual({ sessions: expected.slice(50) });
+
+      send(4, 'session/list', { cwd: '/other-project' });
+      expect((await waitFor((message) => message.id === 4)).result).toEqual({
+        sessions: [{ sessionId: 'S-other-000000', cwd: '/other-project' }],
+      });
+
+      send(5, 'session/list', { cwd: '/missing-project' });
+      expect((await waitFor((message) => message.id === 5)).result).toEqual({ sessions: [] });
+
+      send(6, 'session/list', { cursor: 'invalid!' });
+      expect((await waitFor((message) => message.id === 6)).error?.code).toBe(-32602);
     } finally {
       await stopProcess(process);
     }

@@ -1013,9 +1013,10 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLA
           textInput += `\n${chunk.uri}\n`;
           break;
         case 'resource':
-          if ('text' in chunk.resource) {
-            textInput += `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>\n`;
+          if (!('text' in chunk.resource)) {
+            throw RequestError.invalidParams(undefined, 'Embedded binary resources are not supported. Use a text resource or an image prompt block.');
           }
+          textInput += `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>\n`;
           break;
         case 'image':
           if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(chunk.mimeType)) {

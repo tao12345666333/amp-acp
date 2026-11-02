@@ -132,7 +132,7 @@ export class AcpV2Adapter {
       .onRequest(AGENT_METHODS.session_new, ({ params }) => this.newSession(params))
       .onRequest(AGENT_METHODS.session_resume, ({ params }) => this.resumeSession(params))
       .onRequest(AGENT_METHODS.session_close, ({ params }) => this.closeSession(params))
-      .onRequest(AGENT_METHODS.session_list, () => ({ sessions: [] }))
+      .onRequest(AGENT_METHODS.session_list, ({ params }) => this.inner.listSessions(params))
       .onRequest(AGENT_METHODS.session_set_config_option, ({ params }) => this.setConfigOption(params))
       .onRequest(AGENT_METHODS.session_prompt, ({ params }) => this.prompt(params))
       .onNotification(AGENT_METHODS.session_cancel, ({ params }) => this.cancel(params));

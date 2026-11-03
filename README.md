@@ -128,7 +128,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 
 While a turn runs, amp-acp sends an ACP `usage_update` whenever the latest model call reports different context usage. `used` is that response's input, cache-read, cache-write, and output tokens; `size` comes from `AMP_ACP_CONTEXT_WINDOW_SIZE` and defaults to a conservative `200000`. Set the variable to the context window of the model you use if your client should display a more precise percentage. The final token totals remain available on `PromptResponse.usage`.
 
-Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. Other execution errors keep their error message instead of being reported as a refusal.
+Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. An `error_during_execution` result rejects the v1 prompt and emits its error message instead of returning a successful `end_turn`. Other execution errors keep their error message instead of being reported as a refusal.
 
 When the client advertises `clientCapabilities.session.notices`, failed, denied, or registry-blocked MCP servers and Amp permission denials are sent as live `notice` updates. Clients without that capability receive the same information as an ordinary agent message so it stays visible in the transcript.
 
@@ -310,7 +310,7 @@ The v2 adapter keeps the existing session, model, queue, and Amp transport behav
 - v1 `plan` updates become v2 `plan_update`; v1 `tool_call` updates become v2 `tool_call_update`.
 - `session/resume`, `session/close`, `session/list`, and `session/set_config_option` forward to the existing implementation. Listing discovers adapter-persisted sessions, with working-directory filtering, titles, timestamps, and cursor pagination; it does not enumerate all Amp account threads.
 
-v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity.
+v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity. Execution failures use its existing error-notice and idle-state path with stop reason `refusal`; `session/prompt` still returns a `messageId` immediately.
 
 ## MCP Configuration Passthrough
 

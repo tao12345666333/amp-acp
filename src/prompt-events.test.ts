@@ -150,6 +150,54 @@ describe('prompt usage, stop reason, and notices', () => {
     expect(response.stopReason).toBe('max_turn_requests');
   });
 
+  it.each(['execution unavailable', 'Request was aborted by the model provider'])(
+    'rejects a prompt when Amp returns an execution error: %s',
+    async (error) => {
+      await expect(runPrompt([
+        { type: 'system', subtype: 'init', session_id: threadId, mcp_servers: [] },
+        { type: 'result', subtype: 'error_during_execution', session_id: threadId, is_error: true, error },
+      ])).rejects.toThrow(error);
+    },
+  );
+
+  it('keeps user cancellation when Amp subsequently reports an execution error', async () => {
+    const started = Promise.withResolvers<void>();
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute({ signal }) {
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        started.resolve();
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+        yield {
+          type: 'result', subtype: 'error_during_execution', is_error: true,
+          error: 'Request was aborted by the model provider',
+        };
+      },
+    };
+    const agent = new AmpAcpAgent({ sessionUpdate: async () => {}, notify: async () => {} }, transport, {
+      threadStore: { load: async () => null, save: async () => {} },
+      discoverPluginModes: () => [],
+    });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const prompt = agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'cancel me' }] });
+    try {
+      await started.promise;
+      await agent.cancel({ sessionId: session.sessionId });
+      expect(await prompt).toEqual({ stopReason: 'cancelled' });
+    } finally {
+      await agent.cancel({ sessionId: session.sessionId });
+      await prompt;
+      agent.close();
+    }
+  });
+
+  it('preserves authentication errors in execution results', async () => {
+    await expect(runPrompt([
+      { type: 'system', subtype: 'init', session_id: threadId, mcp_servers: [] },
+      { type: 'result', subtype: 'error_during_execution', session_id: threadId, is_error: true, error: 'Unauthorized' },
+    ])).rejects.toMatchObject({ code: -32000 });
+  });
+
   it('falls back to an agent message when the client does not support notices', async () => {
     const { updates } = await runPrompt([
       {

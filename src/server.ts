@@ -1092,6 +1092,7 @@ export class AmpAcpAgent {
     const turnUsage = new TurnUsage();
     let lastUsage: { used: number; size: number } | null = null;
     let stopReason: PromptResponse['stopReason'] = 'end_turn';
+    let executionError: Error | undefined;
 
     try {
       for await (const message of transport.execute({
@@ -1145,6 +1146,10 @@ export class AmpAcpAgent {
             sessionId: params.sessionId,
             update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Error: ${message.error}` } },
           });
+          if (message.subtype === 'error_during_execution') {
+            executionError = new Error(message.error);
+            throw executionError;
+          }
         }
 
         lastUsage = await this.sendUsageUpdate(params.sessionId, turnUsage, lastUsage);
@@ -1153,7 +1158,7 @@ export class AmpAcpAgent {
       const usage = turnUsage.toAcp();
       return { stopReason: turn.cancelled ? 'cancelled' : stopReason, ...(usage ? { usage } : {}) };
     } catch (err) {
-      if (turn.cancelled || (err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
+      if (turn.cancelled || (err !== executionError && err instanceof Error && (err.name === 'AbortError' || err.message.includes('aborted')))) {
         return { stopReason: 'cancelled' };
       }
       if (err instanceof Error && isAuthError(err.message)) {

@@ -185,6 +185,8 @@ amp-acp advertises the ACP `loadSession` capability. Once a prompt has started a
 
 During `session/load`, prior messages are replayed to the client as `session/update` notifications (user/agent messages, thinking, and tool calls) using `amp threads export`, so the client can rebuild the transcript. Replay is best-effort: if the export fails, the session still loads and the thread still continues with full server-side context.
 
+Replayed content preserves the export's `protocolMessageID`, falling back to its legacy `messageId` (numeric IDs become strings), in the standard ACP `messageId` field. Missing IDs stay absent; the adapter does not infer message identity from text or timestamps.
+
 ### Session title and timestamp
 
 amp-acp sends the standard `session_info_update` notification with a human-readable `title` and an ISO 8601 `updatedAt` timestamp. The title comes from the first user prompt: whitespace is collapsed, the text is truncated to 60 characters, and a first turn with no text falls back to `Amp session`. amp-acp never calls a model to summarize the session.

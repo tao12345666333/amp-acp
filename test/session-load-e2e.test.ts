@@ -58,6 +58,15 @@ if (argv[0] === 'threads' && argv[1] === 'export') {
       content: [{ type: 'text', text: entry.text }],
     };
   });
+  messages.push(
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'tool-fixture', name: 'Read', input: { path: '/tmp/example' } }] },
+    { role: 'user', content: [{ type: 'tool_result', toolUseID: 'tool-fixture', run: { status: 'done', result: { output: 'example', exitCode: 0 } } }] },
+    { role: 'user', content: [{ type: 'tool_result', toolUseID: 'empty-fixture', run: { status: 'done', result: '' } }] },
+    { role: 'user', content: [{ type: 'tool_result', toolUseID: 'pending-fixture', run: { status: 'running', result: 'partial' } }] },
+    { role: 'user', content: [{ type: 'tool_result', toolUseID: 'unknown-fixture', run: { status: 'unexpected', result: 'unverified' } }] },
+    { role: 'user', content: [{ type: 'tool_result', toolUseID: 'missing-fixture', run: { status: 'done' } }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'legacy-fixture', content: 'legacy failure', is_error: true }] },
+  );
   console.log(JSON.stringify({ v: 101, id: argv[2], messages }));
   process.exit(0);
 }
@@ -111,12 +120,14 @@ function spawnAdapter() {
   });
   const stderr: Buffer[] = [];
   child.stderr!.on('data', (chunk: Buffer) => stderr.push(chunk));
+  const stdout: Buffer[] = [];
+  child.stdout!.on('data', (chunk: Buffer) => stdout.push(chunk));
   const updates: SessionNotification[] = [];
   const connection = client({ name: 'amp-acp-load-e2e-client' })
     .onNotification(methods.client.session.update, (context) => {
       updates.push(context.params);
     });
-  return { process: child, updates, stderr, connection };
+  return { process: child, updates, stdout, stderr, connection };
 }
 
 function killProcess(process: ChildProcess): Promise<void> {
@@ -218,6 +229,15 @@ describe('session/load across adapter restarts', () => {
         expect(byId.get('permission')).toBe('default');
         expect(byId.get('reasoning-effort')).toBe('xhigh');
 
+        const wireToolResults = Buffer.concat(second.stdout).toString().split('\n').slice(0, -1)
+          .map((line) => JSON.parse(line))
+          .filter((message) => message.method === methods.client.session.update)
+          .map((message) => message.params)
+          .filter((notification) => notification.update.sessionUpdate === 'tool_call_update');
+        expect(wireToolResults).toEqual(second.updates.filter(
+          (notification) => notification.update.sessionUpdate === 'tool_call_update',
+        ));
+
         // The pre-restart transcript must have been replayed as updates.
         const replayed = second.updates
           .filter((update) => update.sessionId === sessionId)
@@ -232,6 +252,29 @@ describe('session/load across adapter restarts', () => {
         expect(agentChunks.some((u) => textOf(u).includes(`echo:${MARKER}`))).toBe(true);
         expect(userChunks.map((u) => u.messageId)).toEqual(['1']);
         expect(agentChunks.map((u) => u.messageId)).toEqual(['M-fixture-2']);
+        expect(replayed.filter((u) => u.sessionUpdate === 'tool_call_update')).toEqual([
+          {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'tool-fixture',
+            status: 'completed',
+            rawOutput: '{"output":"example","exitCode":0}',
+            content: [{ type: 'content', content: { type: 'text', text: '{"output":"example","exitCode":0}' } }],
+          },
+          {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'empty-fixture',
+            status: 'completed',
+            rawOutput: '',
+            content: [],
+          },
+          {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'legacy-fixture',
+            status: 'failed',
+            rawOutput: 'legacy failure',
+            content: [{ type: 'content', content: { type: 'text', text: '```\nlegacy failure\n```' } }],
+          },
+        ]);
 
         const turn = await agent.request(methods.agent.session.prompt, {
           sessionId,

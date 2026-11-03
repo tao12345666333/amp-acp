@@ -14,6 +14,7 @@
 - Reject terminal Amp execution failures instead of returning a successful turn, without treating provider error text containing "aborted" as user cancellation.
 - Stop advertising unregistered v1 lifecycle and steering extensions through the experimental ACP v2 bridge.
 - Preserve native message IDs during session history replay instead of losing message boundaries.
+- Replay completed native exported tool results with their tool IDs and output instead of emitting invalid ACP updates.
 
 ## 0.12.0 - 2026-11-01
 

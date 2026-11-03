@@ -187,6 +187,8 @@ During `session/load`, prior messages are replayed to the client as `session/upd
 
 Replayed content preserves the export's `protocolMessageID`, falling back to its legacy `messageId` (numeric IDs become strings), in the standard ACP `messageId` field. Missing IDs stay absent; the adapter does not infer message identity from text or timestamps.
 
+Native exported tool results with `run.status: "done"`, a nonempty tool ID, and a result replay as completed ACP tool updates. String results remain text, and JSON results are serialized as text. Other native result states are skipped, leaving their replayed tool calls in progress. Native error-state variants and binary tool results are not mapped.
+
 ### Session title and timestamp
 
 amp-acp sends the standard `session_info_update` notification with a human-readable `title` and an ISO 8601 `updatedAt` timestamp. The title comes from the first user prompt: whitespace is collapsed, the text is truncated to 60 characters, and a first turn with no text falls back to `Amp session`. amp-acp never calls a model to summarize the session.

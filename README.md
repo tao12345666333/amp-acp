@@ -144,7 +144,7 @@ Assistant, user, and thinking chunks include Amp's message ID when the stream pr
 
 ACP image blocks must contain base64 `data` and a supported `mimeType` (`image/png`, `image/jpeg`, `image/gif`, or `image/webp`). Unsupported types, empty data, and malformed base64 return an invalid-params error rather than running an incomplete prompt.
 
-Embedded `resource` blocks support text only. Binary (`blob`) resources return an invalid-params error before Amp execution, rather than being silently omitted. For images, use an ACP `image` block; resource links are forwarded as URI text, not uploaded as attachments.
+Embedded `resource` blocks support text only. Binary (`blob`) resources return an invalid-params error before starting an ACP v1 or v2 turn and before Amp execution, rather than being silently omitted. For images, use an ACP `image` block; resource links are forwarded as URI text, not uploaded as attachments.
 
 Local image turns use Amp CLI's `--stream-json-input` with ordered text/image content blocks. Orb image turns use `--orb-execute --attach`: images are written to private temporary files, uploaded by Amp, and appended to the text prompt as Amp attachment URLs in image order. Temporary files are removed after execution, including failure and cancellation. Images are uploaded to Amp, not left as local paths the orb cannot read.
 

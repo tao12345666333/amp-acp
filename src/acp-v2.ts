@@ -20,7 +20,7 @@ import type {
   SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import packageJson from '../package.json';
-import { AmpAcpAgent } from './server.js';
+import { AmpAcpAgent, preparePrompt } from './server.js';
 
 const PACKAGE_VERSION: string = packageJson.version;
 const PLAN_ID = 'amp-plan';
@@ -221,8 +221,11 @@ export class AcpV2Adapter {
   }
 
   private async prompt(request: v2.PromptRequest): Promise<v2.PromptResponse> {
+    const prompt = request.prompt as unknown as PromptRequest['prompt'];
+    // Reject invalid blocks before emitting messageId or a running update.
+    preparePrompt(prompt);
     const messageId = messageIdFor(request.sessionId);
-    const text = textFromPrompt(request.prompt as unknown as PromptRequest['prompt']);
+    const text = textFromPrompt(prompt);
     this.inflightBySession.set(request.sessionId, (this.inflightBySession.get(request.sessionId) ?? 0) + 1);
 
     // v2 returns immediately; the turn runs in the background and reports its

@@ -112,6 +112,70 @@ function normalizeBase64ImageData(data: string): string | null {
   if (unpadded.length !== normalized.length && normalized.length % 4 !== 0) return null;
   return normalized;
 }
+
+export interface PreparedPrompt {
+  textInput: string;
+  content: AmpPromptContent[];
+  hasImages: boolean;
+}
+
+/**
+ * Validates and converts ACP prompt blocks into Amp text and image content.
+ * Kept pure so protocol adapters can reject invalid input before acknowledging
+ * a prompt or starting Amp.
+ */
+export function preparePrompt(prompt: PromptRequest['prompt']): PreparedPrompt {
+  let textInput = '';
+  let pendingText = '';
+  const content: AmpPromptContent[] = [];
+  for (const chunk of prompt) {
+    const textStart = textInput.length;
+    switch (chunk.type) {
+      case 'text':
+        if (chunk.text.trim() === '/init') {
+          textInput += `Please analyze this codebase and create an AGENTS.md file containing:
+1. Build/lint/test commands - especially for running a single test
+2. Architecture and codebase structure information, including important subprojects, internal APIs, databases, etc.
+3. Code style guidelines, including imports, conventions, formatting, types, naming conventions, error handling, etc.
+
+The file you create will be given to agentic coding tools (such as yourself) that operate in this repository. Make it about 20 lines long.
+
+If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLAUDE.md), Windsurf rules (.windsurfrules), Cline rules (.clinerules), Goose rules (.goosehints), or Copilot rules (in .github/copilot-instructions.md), make sure to include them. Also, first check if there is an existing AGENTS.md or AGENT.md file, and if so, update it instead of overwriting it.`;
+        } else {
+          textInput += chunk.text;
+        }
+        break;
+      case 'resource_link':
+        textInput += `\n${chunk.uri}\n`;
+        break;
+      case 'resource':
+        if (!('text' in chunk.resource)) {
+          throw RequestError.invalidParams(undefined, 'Embedded binary resources are not supported. Use a text resource or an image prompt block.');
+        }
+        textInput += `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>\n`;
+        break;
+      case 'image': {
+        if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(chunk.mimeType)) {
+          throw RequestError.invalidParams(undefined, `Unsupported image MIME type: ${chunk.mimeType}. Use PNG, JPEG, GIF, or WebP.`);
+        }
+        const imageData = normalizeBase64ImageData(chunk.data);
+        if (!imageData) {
+          throw RequestError.invalidParams(undefined, 'Image data must be non-empty base64.');
+        }
+        if (pendingText) content.push({ type: 'text', text: pendingText });
+        pendingText = '';
+        content.push({ type: 'image', source: { type: 'base64', media_type: chunk.mimeType, data: imageData } });
+        break;
+      }
+      default:
+        break;
+    }
+    pendingText += textInput.slice(textStart);
+  }
+  if (pendingText) content.push({ type: 'text', text: pendingText });
+  return { textInput, content, hasImages: content.some((block) => block.type === 'image') };
+}
+
 const REASONING_EFFORTS = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 type ReasoningEffort = typeof REASONING_EFFORTS[number];
 const THREAD_LIFECYCLE_CAPABILITY = 'amp-acp/thread-lifecycle';
@@ -989,54 +1053,7 @@ export class AmpAcpAgent implements Agent {
     s: SessionState,
     turn: ActiveTurn,
   ): Promise<PromptResponse> {
-    let textInput = '';
-    let pendingText = '';
-    const content: AmpPromptContent[] = [];
-    for (const chunk of params.prompt) {
-      const textStart = textInput.length;
-      switch (chunk.type) {
-        case 'text':
-          if (chunk.text.trim() === '/init') {
-            textInput += `Please analyze this codebase and create an AGENTS.md file containing:
-1. Build/lint/test commands - especially for running a single test
-2. Architecture and codebase structure information, including important subprojects, internal APIs, databases, etc.
-3. Code style guidelines, including imports, conventions, formatting, types, naming conventions, error handling, etc.
-
-The file you create will be given to agentic coding tools (such as yourself) that operate in this repository. Make it about 20 lines long.
-
-If there are Cursor rules (in .cursor/rules/ or .cursorrules), Claude rules (CLAUDE.md), Windsurf rules (.windsurfrules), Cline rules (.clinerules), Goose rules (.goosehints), or Copilot rules (in .github/copilot-instructions.md), make sure to include them. Also, first check if there is an existing AGENTS.md or AGENT.md file, and if so, update it instead of overwriting it.`;
-          } else {
-            textInput += chunk.text;
-          }
-          break;
-        case 'resource_link':
-          textInput += `\n${chunk.uri}\n`;
-          break;
-        case 'resource':
-          if (!('text' in chunk.resource)) {
-            throw RequestError.invalidParams(undefined, 'Embedded binary resources are not supported. Use a text resource or an image prompt block.');
-          }
-          textInput += `\n<context ref="${chunk.resource.uri}">\n${chunk.resource.text}\n</context>\n`;
-          break;
-        case 'image':
-          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(chunk.mimeType)) {
-            throw RequestError.invalidParams(undefined, `Unsupported image MIME type: ${chunk.mimeType}. Use PNG, JPEG, GIF, or WebP.`);
-          }
-          const imageData = normalizeBase64ImageData(chunk.data);
-          if (!imageData) {
-            throw RequestError.invalidParams(undefined, 'Image data must be non-empty base64.');
-          }
-          if (pendingText) content.push({ type: 'text', text: pendingText });
-          pendingText = '';
-          content.push({ type: 'image', source: { type: 'base64', media_type: chunk.mimeType, data: imageData } });
-          break;
-        default:
-          break;
-      }
-      pendingText += textInput.slice(textStart);
-    }
-    if (pendingText) content.push({ type: 'text', text: pendingText });
-    const hasImages = content.some((block) => block.type === 'image');
+    const { textInput, content, hasImages } = preparePrompt(params.prompt);
     if (!s.title) s.title = titleFromPrompt(params.prompt);
 
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;

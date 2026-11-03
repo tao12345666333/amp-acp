@@ -150,6 +150,49 @@ describe('ACP v2 adapter', () => {
     }
   });
 
+  it('rejects embedded binary resources before acknowledging a turn', async () => {
+    const { process, messages, send, waitFor } = startClient(path.join(fixtureDir, 'binary-resource-state'));
+    try {
+      send(1, 'initialize', { protocolVersion: 2, info: { name: 'v2-resource-test', version: '0.0.0' }, capabilities: {} });
+      expect((await waitFor((message) => message.id === 1)).result?.protocolVersion).toBe(2);
+
+      send(2, 'session/new', { cwd: fixtureDir, mcpServers: [] });
+      const created = await waitFor((message) => message.id === 2);
+      const sessionId = created.result?.sessionId;
+      expect(typeof sessionId).toBe('string');
+
+      const updatesBefore = messages.filter((message) => message.method === 'session/update').length;
+      send(3, 'session/prompt', {
+        sessionId,
+        prompt: [
+          { type: 'text', text: 'summarize the attached PDF' },
+          { type: 'resource', resource: { uri: 'file:///tmp/report.pdf', mimeType: 'application/pdf', blob: 'AQID' } },
+        ],
+      });
+      const rejected = await waitFor((message) => message.id === 3);
+      expect(rejected.result).toBeUndefined();
+      expect(rejected.error?.code).toBe(-32602);
+      expect(rejected.error?.message).toContain('Embedded binary resources are not supported');
+      expect(messages.filter((message) => message.method === 'session/update')).toHaveLength(updatesBefore);
+
+      send(4, 'session/prompt', {
+        sessionId,
+        prompt: [{ type: 'text', text: 'retry after rejection' }],
+      });
+      const retried = await waitFor((message) => message.id === 4);
+      expect(typeof retried.result?.messageId).toBe('string');
+      const idle = await waitFor(
+        (message) =>
+          message.method === 'session/update' &&
+          (message.params?.update as { sessionUpdate?: string; state?: string }).sessionUpdate === 'state_update' &&
+          (message.params?.update as { state?: string }).state === 'idle',
+      );
+      expect((idle.params?.update as { stopReason?: string }).stopReason).toBe('end_turn');
+    } finally {
+      await stopProcess(process);
+    }
+  });
+
   it('lists persisted sessions with directory filtering, metadata, and pagination', async () => {
     const stateDir = path.join(fixtureDir, 'list-state');
     const store = new FileThreadMappingStore(stateDir);

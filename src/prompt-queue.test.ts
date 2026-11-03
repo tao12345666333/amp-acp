@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
 import type { AmpExecutionOptions, AmpTransport } from './amp-transport.js';
 import { AmpAcpAgent } from './server.js';
@@ -48,7 +48,7 @@ function controlledTransport(): { transport: AmpTransport; calls: ControlledCall
 
 const mockClient = {
   sessionUpdate: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 const mappings = new Map<string, AmpThreadMapping>();
 

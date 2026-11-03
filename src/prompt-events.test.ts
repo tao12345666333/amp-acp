@@ -1,5 +1,6 @@
+import type { AcpClient } from './acp-client.js';
 import { afterEach, describe, expect, it } from 'bun:test';
-import type { AgentSideConnection, ClientCapabilities, PromptResponse, SessionNotification } from '@agentclientprotocol/sdk';
+import type { ClientCapabilities, PromptResponse, SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import type { AmpStreamMessage, AmpTransport } from './amp-transport.js';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
 import { AmpAcpAgent } from './server.js';
@@ -39,7 +40,7 @@ async function runPrompt(
     sessionUpdate: async (notification: SessionNotification) => {
       updates.push(notification);
     },
-  } as unknown as AgentSideConnection;
+  } as unknown as AcpClient;
   const agent = new AmpAcpAgent(client, fakeTransport(messages), {
     threadStore: {
       load: async (sessionId) => mappings.get(sessionId) ?? null,

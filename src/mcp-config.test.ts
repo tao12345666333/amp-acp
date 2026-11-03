@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import { convertAcpMcpServersToAmpConfig } from './mcp-config.js';
-import type { McpServer } from '@agentclientprotocol/sdk';
+import type { McpServer } from '@agentclientprotocol/sdk/unstable';
 
 describe('MCP Configuration Passthrough', () => {
   describe('stdio type MCP servers', () => {

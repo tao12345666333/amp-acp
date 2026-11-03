@@ -1,4 +1,4 @@
-import type { McpServer } from '@agentclientprotocol/sdk';
+import type { McpServer } from '@agentclientprotocol/sdk/unstable';
 import type { AmpMcpConfig } from './amp-transport.js';
 
 export type { AmpMcpConfig } from './amp-transport.js';

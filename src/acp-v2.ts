@@ -5,10 +5,9 @@ import {
   type AgentApp,
   type AgentConnection,
   agent,
-} from '@agentclientprotocol/sdk/experimental/v2';
-import type * as v2 from '@agentclientprotocol/sdk/experimental/v2';
+} from '@agentclientprotocol/sdk/experimental/v2/unstable';
+import type * as v2 from '@agentclientprotocol/sdk/experimental/v2/unstable';
 import type {
-  AgentSideConnection,
   CancelNotification,
   InitializeRequest,
   InitializeResponse,
@@ -18,8 +17,9 @@ import type {
   PromptResponse,
   SessionNotification,
   SessionUpdate,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import packageJson from '../package.json';
+import type { AcpClient } from './acp-client.js';
 import { AmpAcpAgent } from './server.js';
 
 const PACKAGE_VERSION: string = packageJson.version;
@@ -86,13 +86,6 @@ function messageIdFor(sessionId: string): string {
   return `M-${sessionId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-interface V1ClientLike {
-  sessionUpdate(notification: SessionNotification): Promise<void>;
-  requestPermission(params: unknown): Promise<unknown>;
-  readTextFile(params: unknown): Promise<unknown>;
-  writeTextFile(params: unknown): Promise<unknown>;
-}
-
 /**
  * Experimental ACP v2 adapter. The session, model, prompt queue, cancellation,
  * and Amp transport behavior stay in the v1 `AmpAcpAgent`; this class translates
@@ -100,7 +93,7 @@ interface V1ClientLike {
  * back to v2.
  *
  * Enabled with `AMP_ACP_PROTOCOL=v2`; the default entry point keeps using the
- * v1 `AgentSideConnection` so existing clients are unaffected.
+ * v1 agent app so existing clients are unaffected.
  */
 export class AcpV2Adapter {
   private readonly app: AgentApp;
@@ -109,21 +102,11 @@ export class AcpV2Adapter {
   private readonly inflightBySession = new Map<string, number>();
 
   constructor() {
-    const fakeClient: V1ClientLike = {
+    const fakeClient: AcpClient = {
       sessionUpdate: (notification) => this.sendV1Notification(notification),
-      requestPermission: async () => {
-        throw new Error(
-          'ACP v2 permission prompts are not translated yet; run Amp with the default or bypass permission mode',
-        );
-      },
-      readTextFile: async () => {
-        throw new Error('ACP v2 clients do not expose fs/read_text_file; use local tools instead');
-      },
-      writeTextFile: async () => {
-        throw new Error('ACP v2 clients do not expose fs/write_text_file; use local tools instead');
-      },
+      notify: async () => {},
     };
-    this.inner = new AmpAcpAgent(fakeClient as unknown as AgentSideConnection);
+    this.inner = new AmpAcpAgent(fakeClient);
     this.app = agent()
       .onConnect((connection) => {
         this.connection = connection;

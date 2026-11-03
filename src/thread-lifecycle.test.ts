@@ -1,8 +1,8 @@
+import type { AcpClient } from './acp-client.js';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpExecutionRequest, AmpTransport } from './amp-transport.js';
 import { AmpAcpAgent } from './server.js';
 import { FileThreadMappingStore } from './thread-mapping-store.js';
@@ -17,7 +17,7 @@ const client = {
   createTerminal: async () => ({ id: '' }),
   extMethod: async () => ({}),
   extNotification: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 function transportWithThread(requests: AmpExecutionRequest[]): AmpTransport {
   return {

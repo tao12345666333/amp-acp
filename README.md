@@ -310,7 +310,7 @@ The v2 adapter keeps the existing session, model, queue, and Amp transport behav
 - v1 `plan` updates become v2 `plan_update`; v1 `tool_call` updates become v2 `tool_call_update`.
 - `session/resume`, `session/close`, `session/list`, and `session/set_config_option` forward to the existing implementation. Listing discovers adapter-persisted sessions, with working-directory filtering, titles, timestamps, and cursor pagination; it does not enumerate all Amp account threads.
 
-v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity. Execution failures use its existing error-notice and idle-state path with stop reason `refusal`; `session/prompt` still returns a `messageId` immediately.
+v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity. The v2 bridge does not register or advertise the v1 `amp-acp/thread-lifecycle` and `amp-acp/steering` extensions. Execution failures use its existing error-notice and idle-state path with stop reason `refusal`; `session/prompt` still returns a `messageId` immediately.
 
 ## MCP Configuration Passthrough
 

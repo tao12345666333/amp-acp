@@ -108,6 +108,9 @@ describe('ACP v2 adapter', () => {
       const initialized = await waitFor((message) => message.id === 1);
       expect(initialized.result?.protocolVersion).toBe(2);
       expect(initialized.result?.info).toMatchObject({ name: 'amp-acp' });
+      expect(initialized.result?.capabilities).toBeDefined();
+      expect(initialized.result?.capabilities).not.toHaveProperty('_meta.amp-acp/thread-lifecycle');
+      expect(initialized.result?.capabilities).not.toHaveProperty('_meta.amp-acp/steering');
 
       send(2, 'session/new', { cwd: fixtureDir, mcpServers: [] });
       const created = await waitFor((message) => message.id === 2);

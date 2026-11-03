@@ -112,6 +112,10 @@ describe('Binary integration tests', () => {
       expect(caps.promptCapabilities.embeddedContext).toBe(true);
       expect(caps.mcpCapabilities.http).toBe(true);
       expect(caps.mcpCapabilities.sse).toBe(true);
+      expect(caps._meta).toMatchObject({
+        'amp-acp/thread-lifecycle': { version: 1 },
+        'amp-acp/steering': { version: 1 },
+      });
       const authMethods = resp.result!.authMethods as Array<{
         id: string;
         type?: string;

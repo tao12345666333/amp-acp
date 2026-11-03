@@ -151,7 +151,6 @@ export class AcpV2Adapter {
             stdio: {},
           },
         },
-        ...(v1Capabilities?._meta ? { _meta: v1Capabilities._meta } : {}),
       },
       authMethods: response.authMethods?.flatMap((method) => {
         if (!('type' in method) || method.type !== 'terminal') return [];

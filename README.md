@@ -107,7 +107,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Rich tool updates** — tool calls include the tool name, start as `in_progress`, report raw output, and turn `Write`/`Edit`/`MultiEdit` inputs into ACP diffs; assistant chunks carry Amp's message ID
 - **Image support** — Sends attached PNG, JPEG, GIF, and WebP images to Amp in local and Orb sessions, and handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin)
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin). Configuration changes rejected during an active CLI prompt leave both current and saved session settings unchanged.
 - **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
@@ -128,7 +128,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 
 While a turn runs, amp-acp sends an ACP `usage_update` whenever the latest model call reports different context usage. `used` is that response's input, cache-read, cache-write, and output tokens; `size` comes from `AMP_ACP_CONTEXT_WINDOW_SIZE` and defaults to a conservative `200000`. Set the variable to the context window of the model you use if your client should display a more precise percentage. The final token totals remain available on `PromptResponse.usage`.
 
-Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. Other execution errors keep their error message instead of being reported as a refusal.
+Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. An `error_during_execution` result rejects the v1 prompt and emits its error message instead of returning a successful `end_turn`. Other execution errors keep their error message instead of being reported as a refusal.
 
 When the client advertises `clientCapabilities.session.notices`, failed, denied, or registry-blocked MCP servers and Amp permission denials are sent as live `notice` updates. Clients without that capability receive the same information as an ordinary agent message so it stays visible in the transcript.
 
@@ -184,6 +184,8 @@ When the environment variable `AMP_ACP_CONTINUE_LATEST=1` is set, the first prom
 amp-acp advertises the ACP `loadSession` capability. Once a prompt has started an Amp thread, the ACP session ID is mapped to that thread in the durable session store described above (`$XDG_STATE_HOME/amp-acp/sessions`, one file per session; respects `%LOCALAPPDATA%\amp-acp` on Windows and can be overridden with `AMP_ACP_STATE_DIR`). The store also records the session's permission mode, Amp mode, and execution environment, so when a client calls `session/load`, amp-acp restores those settings and continues the same thread (equivalent to `amp threads continue <id>`), even across amp-acp process restarts.
 
 During `session/load`, prior messages are replayed to the client as `session/update` notifications (user/agent messages, thinking, and tool calls) using `amp threads export`, so the client can rebuild the transcript. Replay is best-effort: if the export fails, the session still loads and the thread still continues with full server-side context.
+
+Replayed content preserves the export's `protocolMessageID`, falling back to its legacy `messageId` (numeric IDs become strings), in the standard ACP `messageId` field. Missing IDs stay absent; the adapter does not infer message identity from text or timestamps.
 
 Native exported tool results with `run.status: "done"`, a nonempty tool ID, and a result replay as completed ACP tool updates. String results remain text, and JSON results are serialized as text. Other native result states are skipped, leaving their replayed tool calls in progress. Native error-state variants and binary tool results are not mapped.
 
@@ -312,7 +314,7 @@ The v2 adapter keeps the existing session, model, queue, and Amp transport behav
 - v1 `plan` updates become v2 `plan_update`; v1 `tool_call` updates become v2 `tool_call_update`.
 - `session/resume`, `session/close`, `session/list`, and `session/set_config_option` forward to the existing implementation. Listing discovers adapter-persisted sessions, with working-directory filtering, titles, timestamps, and cursor pagination; it does not enumerate all Amp account threads.
 
-v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity.
+v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity. The v2 bridge does not register or advertise the v1 `amp-acp/thread-lifecycle` and `amp-acp/steering` extensions. Execution failures use its existing error-notice and idle-state path with stop reason `refusal`; `session/prompt` still returns a `messageId` immediately.
 
 ## MCP Configuration Passthrough
 

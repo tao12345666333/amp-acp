@@ -5,6 +5,8 @@ import { createAcpConversionState, toAcpNotifications, type AcpConversionState }
 export interface ExportedThreadMessage {
   role: string;
   content?: unknown;
+  messageId?: unknown;
+  protocolMessageID?: unknown;
 }
 
 export interface ExportedThread {
@@ -104,7 +106,8 @@ export async function exportThreadMessages(
 
 /**
  * Convert exported thread messages into ACP session/update notifications.
- * Native exported tool results differ from the stream-JSON content shape.
+ * Native exported tool results differ from the stream-JSON content shape, and
+ * export IDs use protocolMessageID or legacy messageId rather than stream id.
  */
 export function historyToNotifications(
   messages: ExportedThreadMessage[],
@@ -114,6 +117,13 @@ export function historyToNotifications(
   const notifications: SessionNotification[] = [];
   for (const message of messages) {
     if (message.role !== 'user' && message.role !== 'assistant') continue;
+    const nativeId = typeof message.protocolMessageID === 'string' ? message.protocolMessageID.trim() : '';
+    const legacyId = typeof message.messageId === 'string'
+      ? message.messageId.trim()
+      : typeof message.messageId === 'number' && Number.isInteger(message.messageId) && message.messageId >= 0
+        ? String(message.messageId)
+        : '';
+    const id = nativeId || legacyId || undefined;
     const content = Array.isArray(message.content)
       ? message.content.flatMap((block: unknown) => {
         if (
@@ -136,7 +146,7 @@ export function historyToNotifications(
       : message.content;
     notifications.push(
       ...toAcpNotifications(
-        { type: message.role, message: { content } },
+        { type: message.role, message: { id, content } },
         sessionId,
         state,
       ),

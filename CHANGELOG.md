@@ -10,6 +10,10 @@
 
 - Reject embedded binary `resource` prompt blocks with an invalid-params error on ACP v1 and the experimental v2 bridge before starting a turn or invoking Amp.
 - Restore `session/list` through the experimental ACP v2 bridge, including working-directory filtering and cursor pagination, so clients can discover and import persisted sessions.
+- Keep current and saved session settings unchanged when a config option change is rejected during an active CLI prompt.
+- Reject terminal Amp execution failures instead of returning a successful turn, without treating provider error text containing "aborted" as user cancellation.
+- Stop advertising unregistered v1 lifecycle and steering extensions through the experimental ACP v2 bridge.
+- Preserve native message IDs during session history replay instead of losing message boundaries.
 - Replay completed native exported tool results with their tool IDs and output instead of emitting invalid ACP updates.
 
 ## 0.12.0 - 2026-11-01

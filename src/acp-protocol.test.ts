@@ -228,6 +228,32 @@ describe('ACP Protocol End-to-End', () => {
     expect(prompts[0]?.content).toBeUndefined();
   });
 
+  it('rejects embedded binary resources without executing an incomplete local or Orb prompt', async () => {
+    const session = await agentConnection.newSession({ cwd: '/tmp', mcpServers: [] });
+    for (const executor of ['local', 'orb']) {
+      await agentConnection.setSessionConfigOption({ sessionId: session.sessionId, configId: 'execution-environment', value: executor });
+      await expect(agentConnection.prompt({
+        sessionId: session.sessionId,
+        prompt: [
+          { type: 'text', text: 'summarize the attached PDF' },
+          { type: 'resource', resource: { uri: 'file:///tmp/report.pdf', mimeType: 'application/pdf', blob: 'AQID' } },
+        ],
+      })).rejects.toMatchObject({ code: -32602 });
+    }
+    expect(prompts).toHaveLength(0);
+
+    await agentConnection.prompt({
+      sessionId: session.sessionId,
+      prompt: [
+        { type: 'text', text: 'retry with text' },
+        { type: 'resource', resource: { uri: 'file:///tmp/report.txt', text: 'report contents' } },
+        { type: 'resource_link', uri: 'https://example.com/reference', name: 'reference' },
+      ],
+    });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.prompt).toBe('retry with text\n<context ref="file:///tmp/report.txt">\nreport contents\n</context>\n\nhttps://example.com/reference\n');
+  });
+
   it('should handle newSession and return a valid sessionId', async () => {
     const response = await agentConnection.newSession({
       cwd: '/tmp/test',

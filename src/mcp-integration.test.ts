@@ -1,6 +1,6 @@
+import type { AcpClient } from './acp-client.js';
 import { describe, it, beforeEach, expect } from 'bun:test';
 import { AmpAcpAgent } from './server.js';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 
 const mockClient = {
   sessionUpdate: async () => {},
@@ -10,7 +10,7 @@ const mockClient = {
   createTerminal: async () => ({ id: '' }),
   extMethod: async () => ({}),
   extNotification: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 describe('AmpAcpAgent MCP Integration', () => {
   let agent: AmpAcpAgent;

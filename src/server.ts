@@ -1,7 +1,5 @@
 import {
   RequestError,
-  type AgentSideConnection,
-  type Agent,
   type InitializeRequest,
   type InitializeResponse,
   type NewSessionRequest,
@@ -17,10 +15,6 @@ import {
   type SetSessionConfigOptionResponse,
   type SetSessionModeRequest,
   type SetSessionModeResponse,
-  type ReadTextFileRequest,
-  type ReadTextFileResponse,
-  type WriteTextFileRequest,
-  type WriteTextFileResponse,
   type ClientCapabilities,
   type SessionConfigOption,
   type LoadSessionRequest,
@@ -33,7 +27,7 @@ import {
   type CloseSessionResponse,
   type SessionInfo,
   type AvailableCommand,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import {
   createAmpTransport,
   isAmpThreadId,
@@ -44,6 +38,7 @@ import {
   type AmpThreadLifecycleOptions,
   type AmpTransport,
 } from './amp-transport.js';
+import type { AcpClient } from './acp-client.js';
 import { convertAcpMcpServersToAmpConfig, type AmpMcpConfig } from './mcp-config.js';
 import {
   FileThreadMappingStore,
@@ -469,8 +464,8 @@ interface AmpAcpAgentOptions {
   discoverPluginModes?: (cwd: string) => PluginAgentMode[];
 }
 
-export class AmpAcpAgent implements Agent {
-  private client: AgentSideConnection;
+export class AmpAcpAgent {
+  private client: AcpClient;
   private transport: AmpTransport;
   private orbTransport: AmpTransport;
   private threadStore: ThreadMappingStore;
@@ -484,7 +479,7 @@ export class AmpAcpAgent implements Agent {
   private warnedUnsupportedEffort = false;
 
   constructor(
-    client: AgentSideConnection,
+    client: AcpClient,
     transport = createAmpTransport(),
     options: AmpAcpAgentOptions = {},
   ) {
@@ -1402,8 +1397,6 @@ export class AmpAcpAgent implements Agent {
     return { version: 1, threadId: params.threadId, archived: params.archived };
   }
 
-  async readTextFile(params: ReadTextFileRequest): Promise<ReadTextFileResponse> { return this.client.readTextFile(params); }
-  async writeTextFile(params: WriteTextFileRequest): Promise<WriteTextFileResponse> { return this.client.writeTextFile(params); }
 }
 
 export function isAuthError(message: string): boolean {

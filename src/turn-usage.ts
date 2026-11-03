@@ -1,4 +1,4 @@
-import type { Usage } from '@agentclientprotocol/sdk';
+import type { Usage } from '@agentclientprotocol/sdk/unstable';
 
 /** Token counts as Amp's Claude Code-compatible stream reports them. */
 interface AmpUsage {

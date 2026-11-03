@@ -1,4 +1,4 @@
-import { ndJsonStream } from '@agentclientprotocol/sdk/experimental/v2';
+import { ndJsonStream } from '@agentclientprotocol/sdk/experimental/v2/unstable';
 import { nodeToWebWritable, nodeToWebReadable } from './utils.js';
 import { AcpV2Adapter } from './acp-v2.js';
 

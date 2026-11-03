@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpExecutionOptions, AmpExecutionRequest, AmpTransport } from './amp-transport.js';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
 
@@ -30,7 +30,7 @@ const mockClient = {
   createTerminal: async () => ({ id: '' }),
   extMethod: async () => ({}),
   extNotification: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 describe('AmpAcpAgent prompt() continue option', () => {
   let agent: InstanceType<typeof AmpAcpAgent>;

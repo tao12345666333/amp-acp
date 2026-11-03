@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
 import type { AmpExecutionOptions, AmpTransport } from './amp-transport.js';
 import { AmpAcpAgent } from './server.js';
@@ -50,7 +50,7 @@ const mockClient = {
   notify: async (method: string, params: unknown) => {
     notifications.push({ method, params });
   },
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 async function setup() {
   mappings.clear();

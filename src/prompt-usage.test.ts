@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { describe, expect, it, mock } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpThreadMapping } from './thread-mapping-store.js';
 
 const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
@@ -37,7 +37,7 @@ const [{ AmpAcpAgent }, { createAmpTransport }] = await Promise.all([
 
 const client = {
   sessionUpdate: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 describe('AmpAcpAgent prompt() usage', () => {
   it('answers the turn with its token usage', async () => {

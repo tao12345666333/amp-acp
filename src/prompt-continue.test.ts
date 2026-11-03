@@ -1,7 +1,10 @@
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import type { AmpExecutionOptions, AmpExecutionRequest, AmpTransport } from './amp-transport.js';
-import type { AmpThreadMapping } from './thread-mapping-store.js';
+import { FileThreadMappingStore, type AmpThreadMapping } from './thread-mapping-store.js';
 
 const capturedCalls: { options: Record<string, unknown> }[] = [];
 const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
@@ -153,6 +156,72 @@ describe('AmpAcpAgent prompt() continue option', () => {
       value: 'bypass',
     })).resolves.toMatchObject({ configOptions: expect.any(Array) });
     expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
+  });
+
+  it('preserves rejected permission changes through cancellation and restart', async () => {
+    const stateDir = await mkdtemp(path.join(os.tmpdir(), 'amp-acp-config-'));
+    const started = Promise.withResolvers<void>();
+    const calls: AmpExecutionOptions[] = [];
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute(request) {
+        calls.push(request.options);
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        if (calls.length === 1) {
+          started.resolve();
+          await new Promise<void>((resolve) => {
+            request.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          throw new Error('Amp CLI prompt was cancelled');
+        }
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    const options = {
+      threadStore: new FileThreadMappingStore(stateDir),
+      discoverPluginModes: () => [],
+    };
+    agent = new AmpAcpAgent(mockClient, transport, options);
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const prompt = agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    try {
+      await started.promise;
+      await expect(agent.setSessionConfigOption({
+        sessionId: session.sessionId, configId: 'permission', value: 'default',
+      })).resolves.toMatchObject({ configOptions: expect.any(Array) });
+      await expect(agent.setSessionConfigOption({
+        sessionId: session.sessionId, configId: 'permission', value: 'bypass',
+      })).rejects.toThrow('Session configuration cannot change while a prompt is active');
+      await agent.cancel({ sessionId: session.sessionId });
+      expect((await prompt).stopReason).toBe('cancelled');
+      agent.close();
+
+      agent = new AmpAcpAgent(mockClient, transport, {
+        ...options, threadStore: new FileThreadMappingStore(stateDir),
+      });
+      const resumed = await agent.resumeSession({
+        sessionId: session.sessionId, cwd: '/tmp', mcpServers: [],
+      });
+      expect(resumed.configOptions).toContainEqual(expect.objectContaining({
+        id: 'permission', currentValue: 'default',
+      }));
+      await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'resume' }] });
+      expect(calls[1]!.dangerouslyAllowAll).toBeUndefined();
+
+      await agent.setSessionConfigOption({
+        sessionId: session.sessionId, configId: 'permission', value: 'bypass',
+      });
+      await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'idle change' }] });
+      expect(calls[2]!.dangerouslyAllowAll).toBe(true);
+    } finally {
+      await agent.cancel({ sessionId: session.sessionId });
+      await prompt;
+      agent.close();
+      await rm(stateDir, { recursive: true, force: true });
+    }
   });
 
   it('steers after cancellation before Amp reports its thread ID', async () => {

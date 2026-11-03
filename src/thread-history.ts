@@ -104,8 +104,7 @@ export async function exportThreadMessages(
 
 /**
  * Convert exported thread messages into ACP session/update notifications.
- * Exported content blocks use the same shape as Amp's stream-JSON messages,
- * so the streaming mapper is reused as-is.
+ * Native exported tool results differ from the stream-JSON content shape.
  */
 export function historyToNotifications(
   messages: ExportedThreadMessage[],
@@ -115,9 +114,29 @@ export function historyToNotifications(
   const notifications: SessionNotification[] = [];
   for (const message of messages) {
     if (message.role !== 'user' && message.role !== 'assistant') continue;
+    const content = Array.isArray(message.content)
+      ? message.content.flatMap((block: unknown) => {
+        if (
+          !block || typeof block !== 'object' ||
+          !('type' in block) || block.type !== 'tool_result' || !('toolUseID' in block)
+        ) return [block];
+        if (typeof block.toolUseID !== 'string' || !block.toolUseID || !('run' in block)) return [];
+        const run = block.run;
+        if (
+          !run || typeof run !== 'object' ||
+          !('status' in run) || run.status !== 'done' || !('result' in run)
+        ) return [];
+        return [{
+          type: 'tool_result',
+          tool_use_id: block.toolUseID,
+          content: typeof run.result === 'string' ? run.result : JSON.stringify(run.result) ?? '',
+          is_error: false,
+        }];
+      })
+      : message.content;
     notifications.push(
       ...toAcpNotifications(
-        { type: message.role, message: { content: message.content } },
+        { type: message.role, message: { content } },
         sessionId,
         state,
       ),

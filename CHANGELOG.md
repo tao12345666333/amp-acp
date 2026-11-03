@@ -13,6 +13,7 @@
 - Keep current and saved session settings unchanged when a config option change is rejected during an active CLI prompt.
 - Reject terminal Amp execution failures instead of returning a successful turn, without treating provider error text containing "aborted" as user cancellation.
 - Stop advertising unregistered v1 lifecycle and steering extensions through the experimental ACP v2 bridge.
+- Preserve native message IDs during session history replay instead of losing message boundaries.
 
 ## 0.12.0 - 2026-11-01
 

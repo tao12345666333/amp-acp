@@ -49,9 +49,14 @@ if (argv[0] === 'threads' && argv[1] === 'export') {
   const lines = fs.existsSync(transcript)
     ? fs.readFileSync(transcript, 'utf8').split('\\n').filter((line) => line.trim())
     : [];
-  const messages = lines.map((line) => {
+  const messages = lines.map((line, index) => {
     const entry = JSON.parse(line);
-    return { role: entry.role, content: [{ type: 'text', text: entry.text }] };
+    return {
+      role: entry.role,
+      messageId: index + 1,
+      ...(entry.role === 'assistant' ? { protocolMessageID: 'M-fixture-' + (index + 1) } : {}),
+      content: [{ type: 'text', text: entry.text }],
+    };
   });
   console.log(JSON.stringify({ v: 101, id: argv[2], messages }));
   process.exit(0);
@@ -225,6 +230,8 @@ describe('session/load across adapter restarts', () => {
         const agentChunks = replayed.filter((u) => u.sessionUpdate === 'agent_message_chunk');
         expect(userChunks.some((u) => textOf(u).includes(MARKER))).toBe(true);
         expect(agentChunks.some((u) => textOf(u).includes(`echo:${MARKER}`))).toBe(true);
+        expect(userChunks.map((u) => u.messageId)).toEqual(['1']);
+        expect(agentChunks.map((u) => u.messageId)).toEqual(['M-fixture-2']);
 
         const turn = await agent.request(methods.agent.session.prompt, {
           sessionId,

@@ -1,9 +1,72 @@
 import { describe, it, beforeEach, expect } from 'bun:test';
-import { ClientSideConnection, AgentSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
+import {
+  client,
+  methods,
+  ndJsonStream,
+  type AuthenticateRequest,
+  type ClientContext,
+  type InitializeRequest,
+  type NewSessionRequest,
+  type PromptRequest,
+  type SetSessionConfigOptionRequest,
+  type SetSessionModeRequest,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk/unstable';
 import { AmpAcpAgent } from './server.js';
+import { createAgentApp } from './agent-app.js';
 import { toAcpNotifications } from './to-acp.js';
-import type { SessionNotification } from '@agentclientprotocol/sdk';
 import type { AmpExecutionRequest, AmpTransport } from './amp-transport.js';
+
+class TestAgentClient {
+  private initialized = false;
+
+  constructor(private readonly context: ClientContext) {}
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    await this.context.request(methods.agent.initialize, {
+      protocolVersion: 1,
+      clientCapabilities: {},
+    });
+    this.initialized = true;
+  }
+
+  async initialize(params: InitializeRequest) {
+    const response = await this.context.request(methods.agent.initialize, params);
+    this.initialized = true;
+    return response;
+  }
+
+  async authenticate(params: AuthenticateRequest) {
+    await this.ensureInitialized();
+    return this.context.request(methods.agent.authenticate, params);
+  }
+
+  async newSession(params: NewSessionRequest) {
+    await this.ensureInitialized();
+    return this.context.request(methods.agent.session.new, params);
+  }
+
+  async setSessionConfigOption(params: SetSessionConfigOptionRequest) {
+    await this.ensureInitialized();
+    return this.context.request(methods.agent.session.setConfigOption, params);
+  }
+
+  async setSessionMode(params: SetSessionModeRequest) {
+    await this.ensureInitialized();
+    return this.context.request(methods.agent.session.setMode, params);
+  }
+
+  async prompt(params: PromptRequest) {
+    await this.ensureInitialized();
+    return this.context.request(methods.agent.session.prompt, params);
+  }
+
+  async extMethod(method: string, params: Record<string, unknown>) {
+    await this.ensureInitialized();
+    return this.context.request(method, params);
+  }
+}
 
 class TestClient {
   notifications: SessionNotification[] = [];
@@ -18,7 +81,7 @@ class TestClient {
 describe('ACP Protocol End-to-End', () => {
   let clientToAgent: TransformStream;
   let agentToClient: TransformStream;
-  let agentConnection: ClientSideConnection;
+  let agentConnection: TestAgentClient;
   let testClient: TestClient;
   let prompts: AmpExecutionRequest[];
 
@@ -35,15 +98,24 @@ describe('ACP Protocol End-to-End', () => {
     agentToClient = new TransformStream();
     testClient = new TestClient();
 
-    agentConnection = new ClientSideConnection(
-      () => testClient,
+    const clientApp = client()
+      .onRequest(methods.client.fs.readTextFile, () => testClient.readTextFile())
+      .onRequest(methods.client.fs.writeTextFile, () => testClient.writeTextFile())
+      .onRequest(methods.client.session.requestPermission, () => testClient.requestPermission())
+      .onNotification(methods.client.session.update, ({ params }) => testClient.sessionUpdate(params));
+    const clientConnection = clientApp.connect(
       ndJsonStream(clientToAgent.writable, agentToClient.readable),
     );
-    new AgentSideConnection(
+
+    const { app } = createAgentApp(
       // Isolate from plugin modes installed on the developer machine.
-      (client) => new AmpAcpAgent(client, transport, { orbTransport: transport, discoverPluginModes: () => [] }),
-      ndJsonStream(agentToClient.writable, clientToAgent.readable),
+      (agentClient) => new AmpAcpAgent(agentClient, transport, {
+        orbTransport: transport,
+        discoverPluginModes: () => [],
+      }),
     );
+    app.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
+    agentConnection = new TestAgentClient(clientConnection.agent);
   });
 
   it.each([{}, { auth: { terminal: false } }, { terminal: true }])(

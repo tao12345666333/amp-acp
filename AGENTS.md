@@ -11,7 +11,9 @@
 This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-compatible clients like Zed.
 
 - `src/index.ts` — Entry point, redirects console to stderr (stdout reserved for ACP stream)
-- `src/run-acp.ts` — Sets up ACP connection using stdin/stdout JSON streams
+- `src/run-acp.ts` — Sets up the SDK 2 ACP v1 connection using stdin/stdout JSON streams
+- `src/agent-app.ts` — Builds the SDK 2 agent app, registers the v1 agent methods, and falls through to the extension-method handler
+- `src/acp-client.ts` — Minimal client interface used by `AmpAcpAgent` and its tests; sends `session/update` notifications and custom client-bound notifications
 - `src/acp-v2.ts` — Experimental opt-in ACP v2 bridge (`AMP_ACP_PROTOCOL=v2`); translates v2 requests and updates around the existing v1 `AmpAcpAgent`. v1 remains the default
 - `src/server.ts` — `AmpAcpAgent` class: handles session creation, listing, deletion, and closure; serializes prompts per session with a bounded queue, next-turn steering, and cancel semantics; advertises Amp slash commands; manages MCP config; and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
 - `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs (including SDK transport fallback)

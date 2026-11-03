@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { describe, it, beforeEach, afterEach, expect, mock } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,7 +29,7 @@ const mockClient = {
   createTerminal: async () => ({ id: '' }),
   extMethod: async () => ({}),
   extNotification: async () => {},
-} as unknown as AgentSideConnection;
+} as unknown as AcpClient;
 
 const noHistory = async () => [];
 
@@ -173,7 +173,7 @@ describe('AmpAcpAgent session/load', () => {
       sessionUpdate: async (notification: unknown) => {
         updates.push(notification);
       },
-    } as unknown as AgentSideConnection;
+    } as unknown as AcpClient;
 
     const exportedThreads: string[] = [];
     const fakeExport = async (threadId: string) => {

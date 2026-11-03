@@ -1,5 +1,5 @@
+import type { AcpClient } from './acp-client.js';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import type { AgentSideConnection } from '@agentclientprotocol/sdk';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +8,7 @@ import { AmpAcpAgent } from './server.js';
 
 const threadId = 'T-01234567-89ab-cdef-0123-456789abcdef';
 
-function createClient(): AgentSideConnection {
+function createClient(): AcpClient {
   return {
     sessionUpdate: async () => {},
     readTextFile: async () => ({ text: '' }),
@@ -17,7 +17,7 @@ function createClient(): AgentSideConnection {
     createTerminal: async () => ({ id: '' }),
     extMethod: async () => ({}),
     extNotification: async () => {},
-  } as unknown as AgentSideConnection;
+  } as unknown as AcpClient;
 }
 
 function fastTransport(): AmpTransport {

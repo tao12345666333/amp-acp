@@ -1,5 +1,6 @@
+import type { AcpClient } from './acp-client.js';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import type { AgentSideConnection, SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,7 +24,7 @@ function createTransport(): AmpTransport {
   };
 }
 
-function createClient(updates: SessionNotification[]): AgentSideConnection {
+function createClient(updates: SessionNotification[]): AcpClient {
   return {
     sessionUpdate: async (notification: SessionNotification) => {
       updates.push(notification);
@@ -34,7 +35,7 @@ function createClient(updates: SessionNotification[]): AgentSideConnection {
     createTerminal: async () => ({ id: '' }),
     extMethod: async () => ({}),
     extNotification: async () => {},
-  } as unknown as AgentSideConnection;
+  } as unknown as AcpClient;
 }
 
 function sessionInfoUpdates(updates: SessionNotification[]) {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Update `@agentclientprotocol/sdk` from 1.9.0 to 2.1.0 and migrate to its app APIs: the v1 adapter now registers typed handlers on `agent()`, sends `session/update` as notifications, initializes the connection explicitly, and keeps custom extension methods on a raw request fallback. ACP v1 remains the default for Zed, Lody, and T3 Code; the experimental v2 bridge keeps its existing behavior.
+
 ### Fixed
 
 - Reject embedded binary `resource` prompt blocks with an invalid-params error on ACP v1 and the experimental v2 bridge before starting a turn or invoking Amp.

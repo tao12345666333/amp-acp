@@ -33,6 +33,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   }
   console.log(JSON.stringify({ type: 'user', message: { content: input.message.content } }));
   if (prompt === 'cancel me') return;
+  if (prompt === 'execution failure') {
+    console.log(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, error: 'execution unavailable' }));
+    return;
+  }
   console.log(JSON.stringify({
     type: 'assistant',
     message: { content: [
@@ -120,6 +124,19 @@ describe('ACP client to compiled amp-acp binary', () => {
             prompt: [{ type: 'text', text: 'second prompt' }],
           });
 
+          await expect(agent.request(methods.agent.session.prompt, {
+            sessionId: session.sessionId,
+            prompt: [{ type: 'text', text: 'execution failure' }],
+          })).rejects.toMatchObject({
+            code: -32603,
+            message: 'Internal error',
+            data: { details: 'execution unavailable' },
+          });
+          const recovered = await agent.request(methods.agent.session.prompt, {
+            sessionId: session.sessionId,
+            prompt: [{ type: 'text', text: 'after failure' }],
+          });
+
           const cancelledPrompt = agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
             prompt: [{ type: 'text', text: 'cancel me' }],
@@ -137,6 +154,7 @@ describe('ACP client to compiled amp-acp binary', () => {
             initialized,
             first,
             second,
+            recovered,
             cancelled,
             steered,
           };
@@ -145,6 +163,7 @@ describe('ACP client to compiled amp-acp binary', () => {
       expect(result.initialized.agentInfo?.name).toBe('amp-acp');
       expect(result.first.stopReason).toBe('end_turn');
       expect(result.second.stopReason).toBe('end_turn');
+      expect(result.recovered.stopReason).toBe('end_turn');
       expect(result.cancelled.stopReason).toBe('cancelled');
       expect(result.steered.stopReason).toBe('end_turn');
 
@@ -166,6 +185,14 @@ describe('ACP client to compiled amp-acp binary', () => {
       expect(sessionUpdates).toContainEqual(expect.objectContaining({
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: 'reply:second prompt;continued:true;steer:false' },
+      }));
+      expect(sessionUpdates).toContainEqual(expect.objectContaining({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Error: execution unavailable' },
+      }));
+      expect(sessionUpdates).toContainEqual(expect.objectContaining({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'reply:after failure;continued:true;steer:false' },
       }));
       expect(sessionUpdates).toContainEqual(expect.objectContaining({
         sessionUpdate: 'agent_message_chunk',

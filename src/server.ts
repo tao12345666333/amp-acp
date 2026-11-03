@@ -1205,21 +1205,19 @@ export class AmpAcpAgent {
       throw new Error(`Unsupported value for ${params.configId}`);
     }
 
-    let changed = false;
+    const next = { executor: s.executor, mode: s.mode, model: s.model, effort: s.effort };
     switch (params.configId) {
       case CONFIG_EXECUTOR:
         if (!isExecutor(params.value)) {
           throw new Error(`Unsupported execution environment: ${params.value}`);
         }
-        changed = s.executor !== params.value;
-        s.executor = params.value;
+        next.executor = params.value;
         break;
       case CONFIG_PERMISSION:
         if (!isPermissionMode(params.value)) {
           throw new Error(`Unsupported permission mode: ${params.value}`);
         }
-        changed = s.mode !== params.value;
-        s.mode = params.value;
+        next.mode = params.value;
         break;
       case CONFIG_AMP_MODE: {
         // Amp accepts built-in modes and plugin-provided custom agent modes
@@ -1231,22 +1229,22 @@ export class AmpAcpAgent {
         if (!mode) {
           throw new Error('Amp mode must be a non-empty string');
         }
-        changed = s.model !== mode;
-        s.model = mode;
+        next.model = mode;
         break;
       }
       case CONFIG_REASONING_EFFORT:
         if (!isReasoningEffort(params.value)) {
           throw new Error(`Unsupported reasoning effort: ${params.value}`);
         }
-        changed = s.effort !== params.value;
-        s.effort = params.value;
+        next.effort = params.value;
         break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
 
+    const changed = next.executor !== s.executor || next.mode !== s.mode || next.model !== s.model || next.effort !== s.effort;
     if (changed) this.resetCliProcessForConfigChange(params.sessionId, s);
+    Object.assign(s, next);
 
     await this.persistSessionQuiet(params.sessionId, s);
 

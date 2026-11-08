@@ -9,6 +9,7 @@ import {
   createAmpTransport,
   createCliTransport,
   isAmpThreadId,
+  readAmpThreadContext,
   setAmpThreadArchived,
   type AmpExecutionOptions,
   type AmpPromptContent,
@@ -144,6 +145,35 @@ describe('Amp transport', () => {
     expect(isAmpThreadId('S-01a03c00-e608-7007-8181-5c1cc56757be')).toBe(false);
     expect(isAmpThreadId('T-test-thread')).toBe(false);
     expect(isAmpThreadId('T-01a03c00-e608-7007-8181-5c1cc56757be; rm -rf /')).toBe(false);
+  });
+
+  it('reads native context through the CLI and rejects unavailable or mismatched snapshots', async () => {
+    const contextFixture = path.join(fixtureDir, 'context.mjs');
+    const threadId = 'T-01a03c00-e608-7007-8181-5c1cc56757be';
+    await writeFile(contextFixture, `
+if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(['threads', 'context', '${threadId}'])) process.exit(2);
+process.stdout.write(process.env.CONTEXT_OUTPUT);
+process.exit(Number(process.env.CONTEXT_EXIT ?? 0));
+`);
+    const context = { threadID: threadId, scope: 'current-context', totalTokens: 205_123, maxContextTokens: 272_000 };
+    const read = (output: string, exit = '0') => readAmpThreadContext(threadId, fixtureDir, {
+      command: process.execPath,
+      commandArgs: [contextFixture],
+      env: { CONTEXT_OUTPUT: output, CONTEXT_EXIT: exit },
+    });
+    expect(await read(JSON.stringify(context))).toEqual({ used: 205_123, size: 272_000 });
+    expect(await read(JSON.stringify({ ...context, totalTokens: 0 }))).toEqual({ used: 0, size: 272_000 });
+    for (const invalid of [
+      { ...context, threadID: 'T-01234567-89ab-cdef-0123-456789abcdef' },
+      { ...context, scope: 'lifetime' },
+      { ...context, maxContextTokens: 0 },
+      { ...context, totalTokens: -1 },
+      { ...context, totalTokens: '205123' },
+      null,
+    ]) expect(await read(JSON.stringify(invalid))).toBeNull();
+    expect(await read('not JSON')).toBeNull();
+    expect(await read(JSON.stringify(context), '3')).toBeNull();
+    expect(await readAmpThreadContext(threadId, fixtureDir, { command: path.join(fixtureDir, 'missing-cli') })).toBeNull();
   });
 
   it('builds exact archive and unarchive arguments', () => {

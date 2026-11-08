@@ -121,6 +121,10 @@ liveDescribe('ACP client to real Amp CLI', () => {
               text: `Remember the token ${CONTINUATION_TOKEN} for my next message. Reply with exactly AMP_ACP_REAL_E2E_OK and nothing else. Do not use tools or modify files.`,
             }],
           });
+          const nativeThreadId = Buffer.concat(stderr).toString().match(/\[amp\] thread (T-[^\s]+)/)?.[1];
+          expect(nativeThreadId).toBeDefined();
+          const firstContext = spawnSync(REAL_CLI_PATH, ['threads', 'context', nativeThreadId!], { encoding: 'utf8' });
+          expect(firstContext.status).toBe(0);
           const firstUpdateCount = updates.length;
           const second = await agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,
@@ -130,7 +134,9 @@ liveDescribe('ACP client to real Amp CLI', () => {
             }],
           });
 
-          return { config, first, second, firstUpdateCount };
+          const secondContext = spawnSync(REAL_CLI_PATH, ['threads', 'context', nativeThreadId!], { encoding: 'utf8' });
+          expect(secondContext.status).toBe(0);
+          return { config, first, second, firstUpdateCount, firstContext: JSON.parse(firstContext.stdout), secondContext: JSON.parse(secondContext.stdout) };
         });
 
       const assistantText = (from: number, to?: number) => updates
@@ -145,6 +151,17 @@ liveDescribe('ACP client to real Amp CLI', () => {
       expect(result.second.stopReason).toBe('end_turn');
       expect(assistantText(0, result.firstUpdateCount)).toContain('AMP_ACP_REAL_E2E_OK');
       expect(assistantText(result.firstUpdateCount)).toContain(CONTINUATION_TOKEN);
+      for (const [from, to, expected] of [
+        [0, result.firstUpdateCount, result.firstContext],
+        [result.firstUpdateCount, updates.length, result.secondContext],
+      ] as const) {
+        const contexts = updates.slice(from, to).map((notification) => notification.update)
+          .filter((update) => update.sessionUpdate === 'usage_update');
+        expect(contexts).toHaveLength(1);
+        expect(contexts[0]?.size).toBe(expected.maxContextTokens);
+        expect(contexts[0]?.used).toBe(expected.totalTokens);
+      }
+      console.error(`[real-e2e] native contexts ${JSON.stringify([result.firstContext, result.secondContext].map((context) => ({ used: context.totalTokens, size: context.maxContextTokens })))}`);
 
       const logs = Buffer.concat(stderr).toString();
       const threadId = logs.match(/\[amp\] thread (T-[^\s]+)/)?.[1];

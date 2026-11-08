@@ -1,11 +1,13 @@
 import { execute, type AmpOptions } from '@ampcode/sdk';
 import { rmSync } from 'node:fs';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 
+const execFileAsync = promisify(execFile);
 const attachmentDirs = new Set<string>();
 let attachmentCleanupInstalled = false;
 
@@ -132,6 +134,42 @@ const AMP_THREAD_ID_PATTERN = /^T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 export function isAmpThreadId(value: unknown): value is string {
   return typeof value === 'string' && AMP_THREAD_ID_PATTERN.test(value);
+}
+
+export async function readAmpThreadContext(
+  threadId: string,
+  cwd: string,
+  options: AmpThreadLifecycleOptions & { signal?: AbortSignal } = {},
+): Promise<{ used: number; size: number } | null> {
+  if (!isAmpThreadId(threadId)) return null;
+  try {
+    const { stdout } = await execFileAsync(
+      options.command ?? process.env.AMP_CLI_PATH ?? 'amp',
+      [...(options.commandArgs ?? []), 'threads', 'context', threadId],
+      {
+        cwd,
+        env: { ...process.env, ...options.env },
+        signal: options.signal,
+        timeout: 5_000,
+        killSignal: 'SIGKILL',
+        maxBuffer: 1024 * 1024,
+        encoding: 'utf8',
+      },
+    );
+    const context: unknown = JSON.parse(stdout);
+    if (
+      typeof context !== 'object' || context === null ||
+      !('threadID' in context) || context.threadID !== threadId ||
+      !('scope' in context) || context.scope !== 'current-context' ||
+      !('totalTokens' in context) || typeof context.totalTokens !== 'number' ||
+      !Number.isSafeInteger(context.totalTokens) || context.totalTokens < 0 ||
+      !('maxContextTokens' in context) || typeof context.maxContextTokens !== 'number' ||
+      !Number.isSafeInteger(context.maxContextTokens) || context.maxContextTokens <= 0
+    ) return null;
+    return { used: context.totalTokens, size: context.maxContextTokens };
+  } catch {
+    return null;
+  }
 }
 
 export function buildAmpArchiveArgs(threadId: string, archived: boolean): string[] {

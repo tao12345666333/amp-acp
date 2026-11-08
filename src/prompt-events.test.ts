@@ -33,6 +33,7 @@ interface RunResult {
 async function runPrompt(
   messages: AmpStreamMessage[],
   clientCapabilities: ClientCapabilities = {},
+  readThreadContext: () => Promise<{ used: number; size: number } | null> = async () => ({ used: 205_123, size: 272_000 }),
 ): Promise<RunResult> {
   const updates: SessionNotification[] = [];
   const mappings = new Map<string, AmpThreadMapping>();
@@ -49,6 +50,9 @@ async function runPrompt(
       },
     },
     discoverPluginModes: () => [],
+    readThreadContext,
+    exportThread: async () => [],
+    replayRetry: { attempts: 1, delayMs: 0 },
   });
   await agent.initialize({ protocolVersion: 1, clientCapabilities });
   const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -73,7 +77,7 @@ describe('prompt usage, stop reason, and notices', () => {
     }
   });
 
-  it('sends usage updates for the latest model call and deduplicates unchanged values', async () => {
+  it('uses native context occupancy and capacity without changing turn usage totals', async () => {
     delete process.env.AMP_ACP_CONTEXT_WINDOW_SIZE;
     const { response, updates } = await runPrompt([
       { type: 'system', subtype: 'init', session_id: threadId, mcp_servers: [] },
@@ -111,8 +115,7 @@ describe('prompt usage, stop reason, and notices', () => {
     ]);
 
     const usages = updateKinds(updates, 'usage_update') as Array<{ used: number; size: number }>;
-    expect(usages.map((usage) => usage.used)).toEqual([915, 950, 250]);
-    expect(usages.every((usage) => usage.size === 200_000)).toBe(true);
+    expect(usages).toEqual([{ sessionUpdate: 'usage_update', used: 205_123, size: 272_000 }]);
     expect(response).toEqual({
       stopReason: 'end_turn',
       usage: {
@@ -123,6 +126,43 @@ describe('prompt usage, stop reason, and notices', () => {
         totalTokens: 1200,
       },
     });
+  });
+
+  it('omits unknown context rather than inventing a capacity, with an explicit override fallback', async () => {
+    delete process.env.AMP_ACP_CONTEXT_WINDOW_SIZE;
+    const messages = [
+      { type: 'system', subtype: 'init', session_id: threadId },
+      { type: 'assistant', message: { content: [], usage: { input_tokens: 200_123, output_tokens: 5_000 } } },
+      { type: 'result', subtype: 'success', is_error: false },
+    ];
+    const unavailable = await runPrompt(messages, {}, async () => null);
+    expect(updateKinds(unavailable.updates, 'usage_update')).toEqual([]);
+    expect(unavailable.response.usage?.totalTokens).toBe(205_123);
+
+    process.env.AMP_ACP_CONTEXT_WINDOW_SIZE = '1000000';
+    const overridden = await runPrompt(messages, {}, async () => null);
+    expect(updateKinds(overridden.updates, 'usage_update')).toEqual([
+      { sessionUpdate: 'usage_update', used: 205_123, size: 1_000_000 },
+    ]);
+
+    const native = await runPrompt(messages);
+    expect(updateKinds(native.updates, 'usage_update')).toEqual([
+      { sessionUpdate: 'usage_update', used: 205_123, size: 272_000 },
+    ]);
+  });
+
+  it('refreshes a loaded session after compaction or a model-capacity change', async () => {
+    let context = { used: 205_123, size: 272_000 };
+    const { agent, sessionId, updates } = await runPrompt([
+      { type: 'system', subtype: 'init', session_id: threadId },
+      { type: 'assistant', message: { content: [], usage: { input_tokens: 12, output_tokens: 3 } } },
+    ], {}, async () => context);
+    context = { used: 12_345, size: 1_000_000 };
+    await agent.loadSession({ sessionId, cwd: '/tmp', mcpServers: [] });
+    expect(updateKinds(updates, 'usage_update')).toEqual([
+      { sessionUpdate: 'usage_update', used: 205_123, size: 272_000 },
+      { sessionUpdate: 'usage_update', used: 12_345, size: 1_000_000 },
+    ]);
   });
 
   it('reports max_tokens from the final assistant response', async () => {
@@ -198,6 +238,33 @@ describe('prompt usage, stop reason, and notices', () => {
     ])).rejects.toMatchObject({ code: -32000 });
   });
 
+  it('cancels a pending context read without publishing stale usage', async () => {
+    const reading = Promise.withResolvers<void>();
+    const updates: SessionNotification[] = [];
+    const agent = new AmpAcpAgent({
+      sessionUpdate: async (notification) => { updates.push(notification); },
+      notify: async () => {},
+    }, fakeTransport([
+      { type: 'system', subtype: 'init', session_id: threadId },
+      { type: 'assistant', message: { content: [], usage: { input_tokens: 12, output_tokens: 3 } } },
+    ]), {
+      threadStore: { load: async () => null, save: async () => {} },
+      discoverPluginModes: () => [],
+      readThreadContext: async (_threadId, _cwd, options) => {
+        reading.resolve();
+        await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => resolve(), { once: true }));
+        return { used: 205_123, size: 272_000 };
+      },
+    });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const prompt = agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'hello' }] });
+    await reading.promise;
+    await agent.cancel({ sessionId: session.sessionId });
+    expect((await prompt).stopReason).toBe('cancelled');
+    expect(updateKinds(updates, 'usage_update')).toEqual([]);
+    agent.close();
+  });
+
   it('falls back to an agent message when the client does not support notices', async () => {
     const { updates } = await runPrompt([
       {
@@ -264,10 +331,10 @@ describe('prompt usage, stop reason, and notices', () => {
 
 describe('turn event helpers', () => {
   it('validates the context window override', () => {
-    expect(contextWindowSize({})).toBe(200_000);
+    expect(contextWindowSize({})).toBeNull();
     expect(contextWindowSize({ AMP_ACP_CONTEXT_WINDOW_SIZE: '1000000' })).toBe(1_000_000);
-    expect(contextWindowSize({ AMP_ACP_CONTEXT_WINDOW_SIZE: '0' })).toBe(200_000);
-    expect(contextWindowSize({ AMP_ACP_CONTEXT_WINDOW_SIZE: 'nope' })).toBe(200_000);
+    expect(contextWindowSize({ AMP_ACP_CONTEXT_WINDOW_SIZE: '0' })).toBeNull();
+    expect(contextWindowSize({ AMP_ACP_CONTEXT_WINDOW_SIZE: 'nope' })).toBeNull();
   });
 
   it('parses MCP status reports and problem states', () => {

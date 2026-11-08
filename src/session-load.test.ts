@@ -36,6 +36,7 @@ const noHistory = async () => [];
 function createAgent(): InstanceType<typeof AmpAcpAgent> {
   return new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
     exportThread: noHistory,
+    readThreadContext: async () => null,
     replayRetry: { attempts: 1, delayMs: 0 },
     discoverPluginModes: () => [],
   });
@@ -187,6 +188,7 @@ describe('AmpAcpAgent session/load', () => {
 
     const second = new AmpAcpAgent(capturingClient, createAmpTransport('sdk'), {
       exportThread: fakeExport,
+      readThreadContext: async () => null,
       discoverPluginModes: () => [],
     });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
@@ -220,6 +222,7 @@ describe('AmpAcpAgent session/load', () => {
     };
     const second = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
       exportThread: failingExport,
+      readThreadContext: async () => null,
       discoverPluginModes: () => [],
     });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });

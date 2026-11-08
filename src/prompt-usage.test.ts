@@ -43,6 +43,7 @@ describe('AmpAcpAgent prompt() usage', () => {
   it('answers the turn with its token usage', async () => {
     const mappings = new Map<string, AmpThreadMapping>();
     const agent = new AmpAcpAgent(client, createAmpTransport('sdk'), {
+      readThreadContext: async () => null,
       threadStore: {
         load: async (sessionId) => mappings.get(sessionId) ?? null,
         save: async (mapping) => {

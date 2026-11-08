@@ -1,8 +1,5 @@
 import type { StopReason } from '@agentclientprotocol/sdk';
 
-/** Conservative default context window used when the environment override is absent. */
-export const DEFAULT_CONTEXT_WINDOW_SIZE = 200_000;
-
 const MCP_PROBLEM_STATUSES = new Set([
   'failed',
   'error',
@@ -19,12 +16,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 const nonEmptyString = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 
-/** Parse and validate `AMP_ACP_CONTEXT_WINDOW_SIZE`, falling back conservatively. */
-export function contextWindowSize(env: NodeJS.ProcessEnv = process.env): number {
+export function contextWindowSize(env: NodeJS.ProcessEnv = process.env): number | null {
   const raw = env.AMP_ACP_CONTEXT_WINDOW_SIZE?.trim();
-  if (!raw) return DEFAULT_CONTEXT_WINDOW_SIZE;
+  if (!raw) return null;
   const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_CONTEXT_WINDOW_SIZE;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export interface McpStatusReport {

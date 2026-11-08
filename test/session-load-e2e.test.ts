@@ -44,6 +44,10 @@ const transcript = process.env.AMP_FAKE_TRANSCRIPT;
 const record = (prompt) =>
   fs.appendFileSync(process.env.AMP_FAKE_LOG, JSON.stringify({ argv, prompt }) + '\\n');
 
+if (argv[0] === 'threads' && argv[1] === 'context') {
+  process.exit(1);
+}
+
 if (argv[0] === 'threads' && argv[1] === 'export') {
   record(null);
   const lines = fs.existsSync(transcript)

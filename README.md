@@ -121,12 +121,16 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Native steering** — local CLI sessions keep the Amp process alive across cancellation and send the replacement prompt with Amp's `steer` marker instead of queuing it as ordinary input
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
-- **Context usage and notices** — stream `usage_update` from the latest model call and map Amp stop reasons (`max_tokens`, `max_turn_requests`); report failed MCP servers and permission denials as ACP notices when the client supports them
+- **Context usage and notices** — report native Amp context estimates and model capacity after turns and session loads, and map Amp stop reasons (`max_tokens`, `max_turn_requests`); report failed MCP servers and permission denials as ACP notices when the client supports them
 - **Live plan updates** — Amp todo tool calls become ACP `plan` updates with the complete todo list, so clients can render progress instead of a raw tool call. Identical consecutive plans are suppressed
 
 ### Context usage and session notices
 
-While a turn runs, amp-acp sends an ACP `usage_update` whenever the latest model call reports different context usage. `used` is that response's input, cache-read, cache-write, and output tokens; `size` comes from `AMP_ACP_CONTEXT_WINDOW_SIZE` and defaults to a conservative `200000`. Set the variable to the context window of the model you use if your client should display a more precise percentage. The final token totals remain available on `PromptResponse.usage`.
+After a turn reports token usage, and when an existing session is loaded, amp-acp reads `amp threads context <thread-id>` and sends its `totalTokens` and `maxContextTokens` as ACP `usage_update.used` and `size`. These are Amp's estimated current input context and the current model's capacity, not lifetime token totals. The read uses `AMP_CLI_PATH`, is bounded to five seconds, and does not run an additional model request. Context is refreshed at these boundaries rather than launching a CLI process for each streamed chunk.
+
+The context read is awaited before the prompt or load response, adding the CLI's latency (up to five seconds) to that response. Text and tool output are streamed before the read. Cancellation aborts an in-progress context read without publishing a stale snapshot.
+
+If native context information is unavailable (for example, on an older Amp CLI), no context update is sent by default. Clients may retain their last reported value. There is no guessed `200000` limit. For older CLIs, an explicit positive `AMP_ACP_CONTEXT_WINDOW_SIZE` enables a fallback using the latest model call's input, cache-read, cache-write, and output tokens. Invalid or non-positive values do not enable this fallback. Native context information takes precedence over the override. The final token totals remain available on `PromptResponse.usage` regardless of context availability.
 
 Amp stop reasons are mapped to ACP: `max_tokens` becomes `max_tokens`, `error_max_turns` becomes `max_turn_requests`, and cancellation remains `cancelled`. An `error_during_execution` result rejects the v1 prompt and emits its error message instead of returning a successful `end_turn`. Other execution errors keep their error message instead of being reported as a refusal.
 

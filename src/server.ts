@@ -31,6 +31,7 @@ import {
 import {
   createAmpTransport,
   isAmpThreadId,
+  readAmpThreadContext,
   setAmpThreadArchived,
   type AmpEffort,
   type AmpExecutionOptions,
@@ -456,6 +457,7 @@ interface AmpAcpAgentOptions {
   threadStore?: ThreadMappingStore;
   setThreadArchived?: SetThreadArchived;
   exportThread?: ThreadHistoryExporter;
+  readThreadContext?: typeof readAmpThreadContext;
   /** Transport used for Orb execution; defaults to the Amp SDK transport. */
   orbTransport?: AmpTransport;
   /** Retry policy for empty history exports on session/load; mainly for tests. */
@@ -474,6 +476,7 @@ export class AmpAcpAgent {
   private clientCapabilities?: ClientCapabilities;
 
   private exportThread: ThreadHistoryExporter;
+  private readThreadContext: typeof readAmpThreadContext;
   private replayRetry: { attempts: number; delayMs: number };
   private discoverPluginModes: (cwd: string) => PluginAgentMode[];
   private warnedUnsupportedEffort = false;
@@ -489,6 +492,7 @@ export class AmpAcpAgent {
     this.threadStore = options.threadStore ?? new FileThreadMappingStore();
     this.setThreadArchived = options.setThreadArchived ?? setAmpThreadArchived;
     this.exportThread = options.exportThread ?? exportThreadHistory;
+    this.readThreadContext = options.readThreadContext ?? readAmpThreadContext;
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
     this.discoverPluginModes = options.discoverPluginModes ?? discoverPluginModesFromDir;
   }
@@ -633,6 +637,7 @@ export class AmpAcpAgent {
         console.error('[acp] failed to replay thread history', e);
       }
       await this.publishSessionInfo(params.sessionId, session);
+      await this.sendUsageUpdate(params.sessionId, session);
     }
 
     setImmediate(async () => {
@@ -832,22 +837,22 @@ export class AmpAcpAgent {
 
   private async sendUsageUpdate(
     sessionId: string,
-    turnUsage: TurnUsage,
-    previous: { used: number; size: number } | null,
-  ): Promise<{ used: number; size: number } | null> {
-    const used = turnUsage.latestContextTokens();
-    if (used === null) return previous;
-    const size = contextWindowSize();
-    if (previous?.used === used && previous.size === size) return previous;
+    session: SessionState,
+    turnUsage?: TurnUsage,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!session.threadId || session.deleted || signal?.aborted) return;
     try {
+      const context = await this.readThreadContext(session.threadId, session.cwd, { signal });
+      const used = context?.used ?? turnUsage?.latestContextTokens() ?? null;
+      const size = context?.size ?? contextWindowSize();
+      if (used === null || size === null || session.deleted || signal?.aborted || this.sessions.get(sessionId) !== session) return;
       await this.client.sessionUpdate({
         sessionId,
         update: { sessionUpdate: 'usage_update', used, size },
       });
-      return { used, size };
     } catch (e) {
       console.error('[acp] failed to send usage_update', e);
-      return previous;
     }
   }
 
@@ -1090,7 +1095,6 @@ export class AmpAcpAgent {
     }
 
     const turnUsage = new TurnUsage();
-    let lastUsage: { used: number; size: number } | null = null;
     let stopReason: PromptResponse['stopReason'] = 'end_turn';
     let executionError: Error | undefined;
 
@@ -1151,10 +1155,11 @@ export class AmpAcpAgent {
             throw executionError;
           }
         }
-
-        lastUsage = await this.sendUsageUpdate(params.sessionId, turnUsage, lastUsage);
       }
 
+      if (turnUsage.latestContextTokens() !== null) {
+        await this.sendUsageUpdate(params.sessionId, s, turnUsage, turn.controller.signal);
+      }
       const usage = turnUsage.toAcp();
       return { stopReason: turn.cancelled ? 'cancelled' : stopReason, ...(usage ? { usage } : {}) };
     } catch (err) {

@@ -22,6 +22,10 @@ beforeAll(async () => {
   fakeAmpPath = path.join(fixtureDir, 'amp.mjs');
   await writeFile(fakeAmpPath, `#!/usr/bin/env node
 import { createInterface } from 'node:readline';
+if (process.argv[2] === 'threads' && process.argv[3] === 'context') {
+  console.log(JSON.stringify({ threadID: process.argv[4], scope: 'current-context', totalTokens: 205123, maxContextTokens: 272000 }));
+  process.exit(0);
+}
 let promptCount = 0;
 createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line);
@@ -53,6 +57,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   console.log(JSON.stringify({
     type: 'assistant',
     message: {
+      usage: { input_tokens: 12, output_tokens: 3 },
       content: [{
         type: 'text',
         text: 'reply:' + prompt + ';continued:' + continued + ';steer:' + input.steer,
@@ -168,6 +173,9 @@ describe('ACP client to compiled amp-acp binary', () => {
       expect(result.steered.stopReason).toBe('end_turn');
 
       const sessionUpdates = updates.map((notification) => notification.update);
+      const contextUpdates = sessionUpdates.filter((update) => update.sessionUpdate === 'usage_update');
+      expect(contextUpdates).toHaveLength(4);
+      expect(contextUpdates.every((update) => update.used === 205_123 && update.size === 272_000)).toBe(true);
       expect(sessionUpdates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_thought_chunk' }));
       expect(sessionUpdates).toContainEqual(expect.objectContaining({
         sessionUpdate: 'tool_call',

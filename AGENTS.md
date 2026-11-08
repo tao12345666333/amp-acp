@@ -16,7 +16,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/acp-client.ts` — Minimal client interface used by `AmpAcpAgent` and its tests; sends `session/update` notifications and custom client-bound notifications
 - `src/acp-v2.ts` — Experimental opt-in ACP v2 bridge (`AMP_ACP_PROTOCOL=v2`); translates v2 requests and updates around the existing v1 `AmpAcpAgent`. v1 remains the default
 - `src/server.ts` — `AmpAcpAgent` class: handles session creation, listing, deletion, and closure; serializes prompts per session with a bounded queue, next-turn steering, and cancel semantics; advertises Amp slash commands; manages MCP config; and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
-- `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs (including SDK transport fallback)
+- `src/amp-transport.ts` — Executes Amp through the CLI or SDK, manages native thread archival, and reads native context via `amp threads context`; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs (including SDK transport fallback)
 - `src/thread-mapping-store.ts` — Persists durable ACP-session-to-Amp-thread mappings, session settings, title, and last-updated timestamp; lists and deletes records for session lifecycle operations
 - `src/thread-history.ts` — Exports Amp thread messages, title, and timestamp for `session/load` replay and metadata recovery
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications, including tool call names, raw output, file diffs, message IDs, and Amp todo calls as `plan` updates

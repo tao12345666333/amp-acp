@@ -40,7 +40,7 @@ async function stopProcess(process: ChildProcess): Promise<void> {
 }
 
 orbDescribe('ACP client to Amp Orb execution', () => {
-  it('runs a low-mode turn in an orb after switching execution-environment', async () => {
+  it('runs a turn in an orb after switching execution-environment', async () => {
     const process = spawn(BINARY_PATH, [], {
       cwd: REPO_ROOT,
       env: { ...globalThis.process.env },
@@ -73,11 +73,6 @@ orbDescribe('ACP client to Amp Orb execution', () => {
             sessionId: session.sessionId,
             configId: 'execution-environment',
             value: 'orb',
-          });
-          await agent.request(methods.agent.session.setConfigOption, {
-            sessionId: session.sessionId,
-            configId: 'amp-mode',
-            value: 'low',
           });
           const prompt = await agent.request(methods.agent.session.prompt, {
             sessionId: session.sessionId,

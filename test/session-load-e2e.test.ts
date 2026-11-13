@@ -71,6 +71,15 @@ if (argv[0] === 'threads' && argv[1] === 'export') {
   process.exit(0);
 }
 
+if (argv[0] === 'plugins' && argv[1] === 'show-agent-options') {
+  console.log('Models');
+  console.log('  acme/fake-model (Fake Model)');
+  console.log('');
+  console.log('Built-in tools');
+  console.log('  create_file');
+  process.exit(0);
+}
+
 const readline = require('node:readline');
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line);
@@ -104,7 +113,7 @@ async function fakeAmpInvocations(): Promise<FakeAmpInvocation[]> {
     .map((line) => JSON.parse(line) as FakeAmpInvocation);
 }
 
-function spawnAdapter() {
+function spawnAdapter(disableModelDiscovery = false) {
   const child = spawn(BINARY_PATH, [], {
     cwd: fixtureDir,
     env: {
@@ -113,6 +122,7 @@ function spawnAdapter() {
       AMP_CLI_PATH: fakeAmpPath,
       AMP_ACP_STATE_DIR: stateDir,
       AMP_ACP_DISABLE_PLUGIN_LIST: '1',
+      AMP_ACP_DISABLE_SHOW_AGENT_OPTIONS: disableModelDiscovery ? '1' : '0',
       AMP_FAKE_LOG: fakeLogPath,
       AMP_FAKE_TRANSCRIPT: fakeTranscriptPath,
     },
@@ -171,8 +181,8 @@ describe('session/load across adapter restarts', () => {
 
         await agent.request(methods.agent.session.setConfigOption, {
           sessionId,
-          configId: 'amp-mode',
-          value: 'high',
+          configId: 'amp-model',
+          value: 'acme/fake-model',
         });
         await agent.request(methods.agent.session.setConfigOption, {
           sessionId,
@@ -200,7 +210,7 @@ describe('session/load across adapter restarts', () => {
       sessionId,
       threadId: THREAD_ID,
       mode: 'default',
-      model: 'high',
+      model: 'acme/fake-model',
       effort: 'xhigh',
       executor: 'local',
       cwd: fixtureDir,
@@ -208,8 +218,8 @@ describe('session/load across adapter restarts', () => {
     expect(title).toBe(MARKER);
     expect(updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
-    // Second adapter process, same state dir: load must reattach and replay.
-    const second = spawnAdapter();
+    // Discovery is unavailable after restart; the saved model must survive.
+    const second = spawnAdapter(true);
     try {
       await second.connection.connectWith(streamOf(second.process), async (agent) => {
         await agent.request(methods.agent.initialize, {
@@ -225,7 +235,7 @@ describe('session/load across adapter restarts', () => {
         const byId = new Map(
           (loaded.configOptions ?? []).map((option) => [option.id, option.currentValue]),
         );
-        expect(byId.get('amp-mode')).toBe('high');
+        expect(byId.get('amp-model')).toBe('acme/fake-model');
         expect(byId.get('permission')).toBe('default');
         expect(byId.get('reasoning-effort')).toBe('xhigh');
 
@@ -300,16 +310,17 @@ describe('session/load across adapter restarts', () => {
       await killProcess(second.process);
     }
 
-    // The follow-up prompt must continue the mapped thread with the persisted mode.
+    // The follow-up prompt must continue the mapped thread with the persisted model.
     const invocations = await fakeAmpInvocations();
     const executes = invocations.filter((i) => i.prompt !== null);
     expect(executes).toHaveLength(2);
     const followUp = executes[1]!;
     expect(followUp.argv).toContain('continue');
     expect(followUp.argv).toContain(THREAD_ID);
-    const modeIndex = followUp.argv.indexOf('--mode');
-    expect(modeIndex).toBeGreaterThanOrEqual(0);
-    expect(followUp.argv[modeIndex + 1]).toBe('high');
+    const modelIndex = followUp.argv.indexOf('--model');
+    expect(modelIndex).toBeGreaterThanOrEqual(0);
+    expect(followUp.argv[modelIndex + 1]).toBe('acme/fake-model');
+    expect(followUp.argv).not.toContain('--mode');
     const featuresIndex = followUp.argv.indexOf('--features');
     expect(featuresIndex).toBeGreaterThanOrEqual(0);
     expect(followUp.argv[featuresIndex + 1]).toBe('effort:xhigh');

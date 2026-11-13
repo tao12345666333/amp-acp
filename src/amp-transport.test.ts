@@ -19,7 +19,6 @@ import {
 const baseOptions: AmpExecutionOptions = {
   cwd: '/tmp/project',
   env: { TERM: 'dumb' },
-  mode: 'medium',
 };
 
 let fixtureDir: string;
@@ -227,23 +226,42 @@ process.exit(3);
       '--stream-json',
       '--stream-json-input',
       '--no-archive-after-execute',
-      '--mode',
-      'medium',
     ]);
   });
 
-  it('passes current modes through to the SDK', () => {
-    for (const mode of ['low', 'medium', 'high', 'ultra'] as const) {
-      expect(buildAmpSdkOptions({ ...baseOptions, mode })).toMatchObject({
-        mode,
-        noArchiveAfterExecute: true,
-      });
-    }
-  });
-
-  it('passes reasoning effort as a CLI thread feature and streams thinking', () => {
+  it('passes a selected model through --model, not --mode or --features', () => {
     expect(buildAmpCliArgs({
       ...baseOptions,
+      model: 'anthropic/claude-opus-5-5',
+    })).toEqual([
+      '--execute',
+      '--stream-json',
+      '--stream-json-input',
+      '--no-archive-after-execute',
+      '--model',
+      'anthropic/claude-opus-5-5',
+    ]);
+  });
+
+  it('passes an agent mode through --mode to the CLI and SDK', () => {
+    expect(buildAmpCliArgs({ ...baseOptions, agentMode: 'acp-flash' })).toEqual([
+      '--execute',
+      '--stream-json',
+      '--stream-json-input',
+      '--no-archive-after-execute',
+      '--mode',
+      'acp-flash',
+    ]);
+    expect(buildAmpSdkOptions({ ...baseOptions, agentMode: 'acp-flash' })).toMatchObject({
+      mode: 'acp-flash',
+      noArchiveAfterExecute: true,
+    });
+  });
+
+  it('keeps model selection separate from effort and streams thinking', () => {
+    expect(buildAmpCliArgs({
+      ...baseOptions,
+      model: 'anthropic/claude-opus-5-5',
       effort: 'high',
       thinking: true,
     })).toEqual([
@@ -251,8 +269,8 @@ process.exit(3);
       '--stream-json-thinking',
       '--stream-json-input',
       '--no-archive-after-execute',
-      '--mode',
-      'medium',
+      '--model',
+      'anthropic/claude-opus-5-5',
       '--features',
       'effort:high',
     ]);
@@ -264,26 +282,15 @@ process.exit(3);
       thinking: true,
       noArchiveAfterExecute: true,
     });
-    // The SDK's `--effort` flag is not accepted by current Amp CLI releases.
+    // SDK-only turns retain the existing default-effort behavior.
     expect(buildAmpSdkOptions({
       ...baseOptions,
       effort: 'xhigh',
     })).not.toHaveProperty('effort');
   });
 
-  it('passes custom plugin agent modes through to the CLI and SDK', () => {
-    expect(buildAmpCliArgs({ ...baseOptions, mode: 'acp-flash' })).toEqual([
-      '--execute',
-      '--stream-json',
-      '--stream-json-input',
-      '--no-archive-after-execute',
-      '--mode',
-      'acp-flash',
-    ]);
-    expect(buildAmpSdkOptions({ ...baseOptions, mode: 'acp-flash' })).toMatchObject({
-      mode: 'acp-flash',
-      noArchiveAfterExecute: true,
-    });
+  it('omits the features flag when no effort is selected', () => {
+    expect(buildAmpCliArgs({ ...baseOptions, agentMode: 'acp-flash' })).not.toContain('--features');
   });
 
   it('passes Orb execution options through to the SDK', () => {
@@ -295,6 +302,54 @@ process.exit(3);
       executor: 'orb',
       project: 'acme/widgets',
     });
+  });
+
+  it.each(['local', 'orb'] as const)('honors SDK model selection via the %s CLI route', async (executor) => {
+    const modelFixture = path.join(fixtureDir, `model-${executor}.mjs`);
+    await writeFile(modelFixture, `#!${process.execPath}
+const args = process.argv.slice(2);
+const reply = (prompt) => {
+  console.log(JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: prompt }] } }));
+  console.log(JSON.stringify({ type: 'assistant', message: {
+    content: [{ type: 'text', text: JSON.stringify({ args, prompt }) }], stop_reason: 'end_turn'
+  } }));
+};
+if (args.includes('--orb-execute')) {
+  let prompt = '';
+  for await (const chunk of process.stdin) prompt += chunk;
+  reply(prompt);
+} else {
+  const { createInterface } = await import('node:readline');
+  createInterface({ input: process.stdin }).on('line', line => reply(JSON.parse(line).message.content[0].text));
+}
+`, { mode: 0o700 });
+    const originalCliPath = process.env.AMP_CLI_PATH;
+    process.env.AMP_CLI_PATH = modelFixture;
+    try {
+      const messages = await collect(createAmpTransport('sdk').execute({
+        sessionId: `sdk-model-${executor}`,
+        prompt: 'use the selected model',
+        options: {
+          cwd: fixtureDir,
+          executor,
+          model: 'openai/gpt-6-sol',
+          continue: 'T-01234567-89ab-cdef-0123-456789abcdef',
+        },
+        signal: new AbortController().signal,
+      }));
+      const response = messages.at(-1)?.message?.content as { type: string; text: string }[];
+      const result = JSON.parse(response[0]!.text);
+      expect(result.prompt).toBe('use the selected model');
+      expect(result.args).toEqual([
+        'threads', 'continue', 'T-01234567-89ab-cdef-0123-456789abcdef',
+        '--execute', '--stream-json',
+        executor === 'orb' ? '--orb-execute' : '--stream-json-input',
+        '--no-archive-after-execute', '--model', 'openai/gpt-6-sol',
+      ]);
+    } finally {
+      if (originalCliPath === undefined) delete process.env.AMP_CLI_PATH;
+      else process.env.AMP_CLI_PATH = originalCliPath;
+    }
   });
 
   it('builds arguments for continuing a specific CLI thread', () => {
@@ -311,8 +366,6 @@ process.exit(3);
       '--stream-json',
       '--stream-json-input',
       '--no-archive-after-execute',
-      '--mode',
-      'medium',
       '--dangerously-allow-all',
       '--mcp-config',
       '{"exa":{"url":"https://mcp.exa.ai/mcp"}}',

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Replace the hardcoded `low`/`medium`/`high`/`ultra` Amp dial modes with Amp's model selector. The `amp-mode` config option becomes `amp-model` (**Model**), listing every model the installed Amp CLI reports via `amp plugins show-agent-options`, with a *Default* entry that lets Amp pick. Selecting a model uses `--model <provider/model>` for local and Orb turns, with CLI fallback when using the pinned Amp SDK. Agent modes registered by Amp plugins remain in the selector and keep using `--mode`. Saved model selections survive discovery failures; sessions persisted with old dial values load as *Default*. Set `AMP_ACP_DISABLE_SHOW_AGENT_OPTIONS=1` to skip the model discovery (tests use this).
 - Update `@agentclientprotocol/sdk` from 1.9.0 to 2.1.0 and migrate to its app APIs: the v1 adapter now registers typed handlers on `agent()`, sends `session/update` as notifications, initializes the connection explicitly, and keeps custom extension methods on a raw request fallback. ACP v1 remains the default for Zed, Lody, and T3 Code; the experimental v2 bridge keeps its existing behavior.
 
 ### Fixed

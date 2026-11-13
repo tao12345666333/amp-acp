@@ -45,6 +45,12 @@ if (argv[0] === 'threads' && argv[1] === 'archive') {
   process.exit(0);
 }
 
+if (argv[0] === 'plugins' && argv[1] === 'show-agent-options') {
+  console.log('Models');
+  console.log('  acme/fake-model (Fake Model)');
+  process.exit(0);
+}
+
 const readline = require('node:readline');
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const input = JSON.parse(line);
@@ -187,7 +193,6 @@ describe('durable session resume across adapter restarts', () => {
       sessionId,
       threadId: THREAD_ID,
       mode: 'default',
-      model: 'medium',
       effort: 'xhigh',
       executor: 'local',
       cwd: fixtureDir,

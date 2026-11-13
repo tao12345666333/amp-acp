@@ -48,6 +48,7 @@ describe('session list, delete, and close', () => {
       exportThread: async () => [],
       replayRetry: { attempts: 1, delayMs: 0 },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
   }
 

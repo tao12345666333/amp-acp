@@ -65,6 +65,7 @@ describe('session title and updatedAt', () => {
       exportThread,
       replayRetry: { attempts: 1, delayMs: 0 },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
   }
 

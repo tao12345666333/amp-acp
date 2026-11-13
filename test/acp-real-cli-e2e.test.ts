@@ -89,6 +89,7 @@ liveDescribe('ACP client to real Amp CLI', () => {
     process.stderr!.on('data', (chunk: Buffer) => stderr.push(chunk));
 
     const updates: SessionNotification[] = [];
+    let selectedModel = 'default';
     const stream = ndJsonStream(
       Writable.toWeb(process.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(process.stdout!) as ReadableStream<Uint8Array>,
@@ -108,10 +109,16 @@ liveDescribe('ACP client to real Amp CLI', () => {
             cwd: fixtureDir,
             mcpServers: [],
           });
+          // Select the first discovered model from the Model selector so the
+          // prompt runs with an explicit `--model` selection.
+          const modelOption = session.configOptions?.find((option) => option.id === 'amp-model');
+          const firstModel = (modelOption?.options ?? []).map((option) => option.value)
+            .find((value) => value !== 'default');
+          selectedModel = firstModel ?? 'default';
           const config = await agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
-            configId: 'amp-mode',
-            value: 'low',
+            configId: 'amp-model',
+            value: selectedModel,
           });
 
           const first = await agent.request(methods.agent.session.prompt, {
@@ -140,7 +147,8 @@ liveDescribe('ACP client to real Amp CLI', () => {
         .map((update) => update.content.text)
         .join('');
 
-      expect(result.config.configOptions.find((option) => option.id === 'amp-mode')?.currentValue).toBe('low');
+      expect(result.config.configOptions.find((option) => option.id === 'amp-model')?.currentValue)
+        .toBe(selectedModel);
       expect(result.first.stopReason).toBe('end_turn');
       expect(result.second.stopReason).toBe('end_turn');
       expect(assistantText(0, result.firstUpdateCount)).toContain('AMP_ACP_REAL_E2E_OK');
@@ -197,7 +205,7 @@ liveDescribe('ACP client to real Amp CLI', () => {
           });
           const config = await agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
-            configId: 'amp-mode',
+            configId: 'amp-model',
             value: CUSTOM_MODE_KEY,
           });
           const prompt = await agent.request(methods.agent.session.prompt, {
@@ -211,10 +219,10 @@ liveDescribe('ACP client to real Amp CLI', () => {
           return { session, config, prompt };
         });
 
-      const ampMode = result.session.configOptions?.find((option) => option.id === 'amp-mode');
-      const modeValues = (ampMode?.options ?? []).map((option) => option.value);
-      expect(modeValues).toContain(CUSTOM_MODE_KEY);
-      expect(result.config.configOptions.find((option) => option.id === 'amp-mode')?.currentValue)
+      const ampModel = result.session.configOptions?.find((option) => option.id === 'amp-model');
+      const modelValues = (ampModel?.options ?? []).map((option) => option.value);
+      expect(modelValues).toContain(CUSTOM_MODE_KEY);
+      expect(result.config.configOptions.find((option) => option.id === 'amp-model')?.currentValue)
         .toBe(CUSTOM_MODE_KEY);
       expect(result.prompt.stopReason).toBe('end_turn');
 

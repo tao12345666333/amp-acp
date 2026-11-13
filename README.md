@@ -107,7 +107,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Rich tool updates** — tool calls include the tool name, start as `in_progress`, report raw output, and turn `Write`/`Edit`/`MultiEdit` inputs into ACP diffs; assistant chunks carry Amp's message ID
 - **Image support** — Sends attached PNG, JPEG, GIF, and WebP images to Amp in local and Orb sessions, and handles image content blocks from Amp (base64 and URL)
 - **MCP passthrough** — MCP servers configured in Zed are automatically passed through to Amp
-- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the current Amp mode, and set reasoning effort via ACP config options. Amp modes include the built-in `low`, `medium`, `high`, and `ultra` modes, plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin). Configuration changes rejected during an active CLI prompt leave both current and saved session settings unchanged.
+- **Session configuration** — Choose local or Orb execution, configure permissions (*Default* or *Bypass*), select the model Amp runs, and set reasoning effort via ACP config options. The Model selector lists every model the installed Amp CLI offers (discovered via `amp plugins show-agent-options`) plus any agent modes registered by Amp plugins (project, system, personal, or workspace — such as `grok45` from the Workspace `official-modes` plugin). Leaving it on *Default* lets Amp pick. Configuration changes rejected during an active CLI prompt leave both current and saved session settings unchanged.
 - **Reasoning stream** — Amp thinking blocks are streamed as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to request plain `--stream-json` output instead
 - **Reasoning effort** — pick `auto`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` through the ACP config options; amp-acp applies it to local CLI turns as the `--features effort:<value>` thread feature
 - **Prompt queue** — concurrent prompts for one session are serialized, and `session/cancel` cancels both the active turn and queued prompts
@@ -173,7 +173,7 @@ By default, Amp infers the project from the Git remotes of the directory supplie
 
 Permissions, MCP servers, skills, and enabled tools supplied by the local client do not apply inside an Orb. Configure them on the Amp project instead. Authentication must have access to Amp Orbs and to the selected project.
 
-A gated live end-to-end test exercises this path against a real Amp account: `AMP_ACP_ORB_LIVE_E2E=1 bun run test:e2e:orb`. It creates a session in this repository, switches the execution environment to Orb, and runs one `low`-mode turn. It consumes Amp credits and requires orb access to the project inferred from the git remote.
+A gated live end-to-end test exercises this path against a real Amp account: `AMP_ACP_ORB_LIVE_E2E=1 bun run test:e2e:orb`. It creates a session in this repository, switches the execution environment to Orb, and runs one turn with Amp's default model. It consumes Amp credits and requires orb access to the project inferred from the git remote.
 
 ### Continuing the latest thread on session start
 
@@ -207,7 +207,7 @@ Deleting a session also makes later `session/load` and `session/resume` calls fa
 
 ### Amp execution transport
 
-By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback; both transports support the current `low`, `medium`, `high`, and `ultra` Amp modes, plus any plugin agent modes (see below).
+By default, amp-acp executes the installed Amp CLI directly through its streaming JSON interface. Set `AMP_ACP_TRANSPORT=sdk` to use `@ampcode/sdk` as a compatibility fallback. Both transports accept plugin agent modes (see below). Explicit model selections and image turns use the CLI even with the SDK transport, including Orb sessions, because the pinned SDK has no `--model` option and cannot stream image input.
 
 ### Plan updates
 
@@ -215,18 +215,26 @@ When Amp calls its todo tool (`TodoWrite` or `todo_write`), amp-acp converts the
 
 The matching successful todo tool result is suppressed so clients do not show a stray tool result for a call they never received. A failed todo write is surfaced as a failed `tool_call_update`.
 
+### Model selection
+
+Amp replaced the built-in `low`, `medium`, `high`, and `ultra` dial modes with a model selector, and amp-acp follows: the **Model** config option lists every model the installed Amp CLI reports via `amp plugins show-agent-options`, with *Default* first — selecting it (or leaving the selection alone) lets Amp pick the model for the thread.
+
+Selecting a model passes it to the Amp CLI as `--model <provider/model>` for both local and Orb sessions. SDK sessions with an explicit model use the CLI fallback rather than ignoring the selection. The selection is persisted with the session mapping and restored by `session/load` and `session/resume`, even when model discovery is unavailable — sessions persisted with the old dial values load as *Default*.
+
+Set `AMP_ACP_DISABLE_SHOW_AGENT_OPTIONS=1` to skip the CLI discovery (tests use this). The result is cached for 60 seconds per working directory, so a model added by an Amp release shows up in the selector of new sessions within about a minute, without an adapter restart. When discovery fails (for example, the Amp CLI is not on `PATH`), new sessions list *Default* plus any plugin agent modes; restored sessions also retain their saved selection.
+
 ### Plugin agent modes
 
 Amp plugins can register custom agent modes with `amp.registerAgentMode(...)` plus a matching `// @amp-agent-mode {"key":"...","label":"..."}` metadata comment in the plugin source (see [Amp's plugin docs](https://ampcode.com/manual#plugins)). Examples include `grok45` from `@amp/grok-45-mode` or any mode listed on the [Modes page](https://ampcode.com/modes) under *Agent Mode Plugins*.
 
-amp-acp auto-discovers these modes and appends them to the Amp Mode selector in your ACP client. For example, with the Workspace `official-modes` plugin loaded you get:
+amp-acp auto-discovers these modes and appends them to the Model selector in your ACP client. For example, with the Workspace `official-modes` plugin loaded you get:
 
 ```text
-Amp Mode  [Medium ▾]
-  Low
-  Medium
-  High
-  Ultra
+Model  [Default ▾]
+  Default
+  anthropic/claude-opus-5-5
+  openai/gpt-6-sol
+  ...
   Grok 4.5
 ```
 
@@ -235,17 +243,17 @@ Discovery uses two sources, in Amp's plugin precedence order (project, then syst
 - `// @amp-agent-mode` comments in project plugins (`.amp/plugins` under the session cwd) and system plugins (`~/.config/amp/plugins` on macOS/Linux, `%USERPROFILE%\.config\amp\plugins` on Windows). These supply both the mode key and its label.
 - `amp plugins list`, which reports every plugin Amp actually loaded — including Personal and Workspace plugins that are not on the local filesystem. Mode keys from that listing that were not already found locally are appended (the CLI does not print labels, so the key is used as the display name).
 
-Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory. Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI listing (tests use this). Plugin modes are passed through as-is to the Amp CLI (`--mode <key>`) or the Amp SDK; Amp rejects keys that do not match a loaded plugin.
+Set `AMP_ACP_SYSTEM_PLUGIN_DIR` to point at a different system plugin directory. Set `AMP_ACP_DISABLE_PLUGIN_LIST=1` to skip the CLI listing (tests use this). Agent modes are passed through as-is to the Amp CLI (`--mode <key>`) or the Amp SDK; Amp rejects keys that do not match a loaded agent.
 
 The `amp plugins list` result is cached for 60 seconds per working directory, so a mode plugin installed while amp-acp is running appears in the selector of new sessions within about a minute, without an adapter restart.
 
-The selector lists the discovered modes, but the adapter accepts any non-empty mode value and passes it through to Amp unchanged. Amp is the authority on mode resolution: it matches mode keys case-insensitively and rejects unknown modes when the prompt runs. This keeps amp-acp forward-compatible as Amp adds modes — including a mode plugin installed moments ago, before discovery picks it up. Likewise, a session restored via `session/load` or `session/resume` keeps its persisted mode even when the mode's plugin is temporarily unloaded; the value stays visible and selected in the option list.
+The selector lists the discovered entries, but the adapter accepts any non-empty value: a discovered model id or a `provider/model` value uses `--model`, and anything else passes through to Amp unchanged as an agent mode (`--mode`). Amp is the authority on selection resolution: it rejects unknown values when the prompt runs. This keeps amp-acp forward-compatible — including an agent mode plugin installed moments ago, before discovery picks it up. Likewise, a session restored via `session/load` or `session/resume` keeps its persisted model or agent mode even when discovery no longer lists it; the value stays visible and selected in the option list.
 
 ### Reasoning effort
 
-The ACP config option **Reasoning Effort** selects how much reasoning Amp performs for the current mode. It is independent of the Amp mode: mode chooses the model/routing tier, effort chooses the reasoning depth.
+The ACP config option **Reasoning Effort** selects how much reasoning Amp performs for the selected model. It is independent of the Model selection: the model chooses what runs, effort chooses the reasoning depth.
 
-Supported values are `auto` (omit the feature and use Amp's default), `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the value as the `--features effort:<value>` thread feature to the CLI transport. The Amp SDK transport used for Orb execution has no equivalent option, so Orb sessions follow the mode's routing; tune effort for Orb threads with the Amp project's mode settings. The selection is persisted with the session mapping and restored by `session/load` and `session/resume`.
+Supported values are `auto` (omit the feature and use Amp's default), `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. amp-acp passes the value as the `--features effort:<value>` thread feature to CLI turns, including SDK fallback turns with an explicit model or local images. Turns that stay on the SDK use Amp's default reasoning behavior. The selection is persisted with the session mapping and restored by `session/load` and `session/resume`.
 
 Amp thinking blocks are included in the stream by default (`--stream-json-thinking` or SDK `thinking: true`) and forwarded as ACP `agent_thought_chunk` updates. Set `AMP_ACP_DISABLE_THINKING=1` to use plain `--stream-json` output.
 
@@ -397,7 +405,7 @@ The regular suite uses a deterministic fake CLI and is safe for CI. Maintainers 
 bun run test:e2e:live
 ```
 
-This opt-in command is never enabled by CI. It runs the binary integration and fake-CLI e2e suite plus two live layers: the real Amp CLI layer creates a temporary workspace, runs two short prompts in `low` mode, and verifies streaming and same-thread continuation through the official ACP client SDK, then registers a plugin-defined custom agent mode (`acp-flash`, pinned to `zhipuai/glm-5.3-flash`), selects it through the ACP config options, prompts with it, and confirms via `amp threads usage --details` that the custom model served the request; the orb layer runs a turn in a remote Amp orb through the `execution-environment` config option. All of it consumes a small amount of Amp usage: the custom-mode test requires the pinned model to be usable by your Amp account, and the orb test requires orb access to the repository's Amp project (inferred from the git `origin` remote).
+This opt-in command is never enabled by CI. It runs the binary integration and fake-CLI e2e suite plus two live layers: the real Amp CLI layer creates a temporary workspace, runs two short prompts with a model selected through the Model config option, and verifies streaming and same-thread continuation through the official ACP client SDK, then registers a plugin-defined custom agent mode (`acp-flash`, pinned to `zhipuai/glm-5.3-flash`), selects it through the ACP config options, prompts with it, and confirms via `amp threads usage --details` that the custom model served the request; the orb layer runs a turn in a remote Amp orb through the `execution-environment` config option. All of it consumes a small amount of Amp usage: the custom-mode test requires the pinned model to be usable by your Amp account, and the orb test requires orb access to the repository's Amp project (inferred from the git `origin` remote).
 
 Everything also runs inside an Amp orb out of the box — orbs ship the Amp CLI and authentication, and the repository's `.agents/setup` installs the dependencies — so maintainers can ask an Amp thread to run `bun run test:e2e:live` instead of testing with a local editor.
 

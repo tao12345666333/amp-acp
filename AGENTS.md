@@ -16,12 +16,13 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/acp-client.ts` — Minimal client interface used by `AmpAcpAgent` and its tests; sends `session/update` notifications and custom client-bound notifications
 - `src/acp-v2.ts` — Experimental opt-in ACP v2 bridge (`AMP_ACP_PROTOCOL=v2`); translates v2 requests and updates around the existing v1 `AmpAcpAgent`. v1 remains the default
 - `src/server.ts` — `AmpAcpAgent` class: handles session creation, listing, deletion, and closure; serializes prompts per session with a bounded queue, next-turn steering, and cancel semantics; advertises Amp slash commands; manages MCP config; and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
-- `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs (including SDK transport fallback)
+- `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; explicit model selections use `--model` via the CLI, including SDK fallback for local and Orb sessions; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs
 - `src/thread-mapping-store.ts` — Persists durable ACP-session-to-Amp-thread mappings, session settings, title, and last-updated timestamp; lists and deletes records for session lifecycle operations
 - `src/thread-history.ts` — Exports Amp thread messages, title, and timestamp for `session/load` replay and metadata recovery
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications, including tool call names, raw output, file diffs, message IDs, and Amp todo calls as `plan` updates
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format
 - `src/plugin-modes.ts` — Discovers agent modes from Amp plugins (`// @amp-agent-mode` comments in project/system plugin files, plus `amp plugins list` for Personal/Workspace plugins, cached 60s per cwd). Unknown but non-empty mode values pass through to Amp unchanged
+- `src/agent-models.ts` — Discovers Amp's thread models from `amp plugins show-agent-options` (Models section, cached 60s per cwd)
 - `src/turn-usage.ts` — Aggregates a turn's token usage from Amp stream messages (last report wins per response id) for `PromptResponse.usage`, and exposes the latest model call's context total for `usage_update`
 - `src/turn-events.ts` — Parses Amp MCP and permission-denial status from the stream and maps Amp stop reasons to ACP stop reasons
 - `src/utils.ts` — Node-to-Web stream converters

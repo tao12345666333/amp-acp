@@ -12,8 +12,10 @@ export interface AmpThreadMapping {
   threadId: string | null;
   /** Last selected ACP permission mode, if persisted. */
   mode?: string;
-  /** Last selected Amp mode, if persisted. */
+  /** Last selected model id, if persisted; absent when Amp picks the model. */
   model?: string;
+  /** Last selected plugin agent-mode key, if persisted. */
+  agentMode?: string;
   /** Last selected reasoning effort, if persisted. */
   effort?: string;
   /** Last selected execution environment, if persisted. */
@@ -58,7 +60,7 @@ function validateMapping(value: unknown, expectedSessionId: string): AmpThreadMa
     sessionId: expectedSessionId,
     threadId: mapping.threadId as string | null,
   };
-  for (const field of ['mode', 'model', 'effort', 'executor', 'cwd', 'title', 'updatedAt'] as const) {
+  for (const field of ['mode', 'model', 'agentMode', 'effort', 'executor', 'cwd', 'title', 'updatedAt'] as const) {
     const fieldValue = mapping[field];
     if (fieldValue === undefined) continue;
     if (typeof fieldValue !== 'string') {

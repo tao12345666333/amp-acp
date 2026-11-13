@@ -47,6 +47,7 @@ import {
   type ThreadMappingStore,
 } from './thread-mapping-store.js';
 import { discoverPluginModes as discoverPluginModesFromDir, type PluginAgentMode } from './plugin-modes.js';
+import { discoverModels as discoverModelsFromCli, type AmpModel as DiscoveredAmpModel } from './agent-models.js';
 import { TurnUsage } from './turn-usage.js';
 import {
   contextWindowSize,
@@ -63,7 +64,9 @@ import packageJson from '../package.json';
 
 const PACKAGE_VERSION: string = packageJson.version;
 const CONFIG_PERMISSION = 'permission';
-const CONFIG_AMP_MODE = 'amp-mode';
+const CONFIG_AMP_MODEL = 'amp-model';
+/** Select value meaning "no explicit selection; Amp picks the model". */
+const MODEL_DEFAULT_VALUE = 'default';
 const CONFIG_EXECUTOR = 'execution-environment';
 const CONFIG_REASONING_EFFORT = 'reasoning-effort';
 /** Maximum number of prompts accepted behind the active turn for one session. */
@@ -181,28 +184,12 @@ const STEER_METHOD = '_amp/session/steer';
 const STEER_APPLIED_METHOD = '_amp/session/steer_applied';
 const STEER_FAILED_METHOD = '_amp/session/steer_failed';
 
-const AMP_MODELS = [
-  {
-    modelId: 'low',
-    name: 'Low',
-    description: 'Fast and economical for simple, well-defined tasks.',
-  },
-  {
-    modelId: 'medium',
-    name: 'Medium',
-    description: 'Balanced capability and cost for everyday coding tasks.',
-  },
-  {
-    modelId: 'high',
-    name: 'High',
-    description: 'Greater capability and reasoning for difficult tasks.',
-  },
-  {
-    modelId: 'ultra',
-    name: 'Ultra',
-    description: 'Maximum capability for the most demanding tasks.',
-  },
-] as const;
+/**
+ * Dial values the built-in `low`/`medium`/`high`/`ultra` modes used before
+ * Amp replaced them with a model selector. A persisted session may still
+ * carry one; it means no model selection now, so Amp picks.
+ */
+const LEGACY_DIAL_MODES = new Set(['low', 'medium', 'high', 'ultra']);
 
 /**
  * Slash prompts supported by Amp itself, plus the adapter's own `/init`.
@@ -242,33 +229,17 @@ type Executor = typeof EXECUTORS[number];
 interface AmpModel {
   modelId: string;
   name: string;
-  description: string;
+  description?: string;
 }
 
-/**
- * Combine built-in Amp modes with agent modes registered by Amp plugins
- * (project, system, personal, and workspace). Built-in modes win on key
- * conflicts; plugins are required not to collide with them, so this is
- * defensive only.
- */
-function buildAmpModels(pluginModes: PluginAgentMode[]): AmpModel[] {
-  const builtinIds = new Set<string>(AMP_MODELS.map((model) => model.modelId.toLowerCase()));
-  return [
-    ...AMP_MODELS,
-    ...pluginModes
-      .filter((mode) => !builtinIds.has(mode.modelId.toLowerCase()))
-      .map((mode) => ({
-        modelId: mode.modelId,
-        name: mode.name,
-        description: mode.source
-          ? `Custom agent mode registered by the ${mode.source} plugin.`
-          : 'Custom agent mode registered by an installed Amp plugin.',
-      })),
-  ];
-}
-
-function isAmpModelId(modelId: string, models: AmpModel[]): boolean {
-  return models.some((model) => model.modelId === modelId);
+function agentModeToModel(mode: PluginAgentMode): AmpModel {
+  return {
+    modelId: mode.modelId,
+    name: mode.name,
+    description: mode.source
+      ? `Custom agent mode registered by the ${mode.source} plugin.`
+      : 'Custom agent mode registered by an installed Amp plugin.',
+  };
 }
 
 function isPermissionMode(mode: string): mode is PermissionMode {
@@ -306,18 +277,31 @@ const REASONING_EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
 };
 
 function buildSessionConfigOptions(
-  s: Pick<SessionState, 'mode' | 'model' | 'models' | 'executor' | 'effort'>,
+  s: Pick<SessionState, 'mode' | 'model' | 'agentMode' | 'models' | 'agentModes' | 'executor' | 'effort'>,
 ): SessionConfigOption[] {
-  const ampModeOptions = s.models.map((model) => ({
-    value: model.modelId,
-    name: model.name,
-    description: model.description,
-  }));
-  if (!isAmpModelId(s.model, s.models)) {
-    // Keep a persisted or passed-through custom mode selectable even when it
-    // is not in the discovered list (e.g. its plugin is temporarily
-    // unloaded), so the session does not silently fall back to another mode.
-    ampModeOptions.push({ value: s.model, name: s.model, description: 'Custom Amp agent mode.' });
+  const currentModel = s.model ?? s.agentMode;
+  const modelOptions: { value: string; name: string; description?: string }[] = [
+    {
+      value: MODEL_DEFAULT_VALUE,
+      name: 'Default',
+      description: "Let Amp choose the model (Staff Pick).",
+    },
+    ...s.models.map((model) => ({
+      value: model.modelId,
+      name: model.name,
+      ...(model.description ? { description: model.description } : {}),
+    })),
+    ...s.agentModes.map((mode) => ({
+      value: mode.modelId,
+      name: mode.name,
+      ...(mode.description ? { description: mode.description } : {}),
+    })),
+  ];
+  if (currentModel && !modelOptions.some((option) => option.value === currentModel)) {
+    // Keep a persisted or passed-through custom selection selectable even
+    // when it is not in the discovered list (e.g. its plugin is temporarily
+    // unloaded), so the session does not silently fall back to another value.
+    modelOptions.push({ value: currentModel, name: currentModel, description: 'Custom selection, resolved by Amp.' });
   }
   return [
     {
@@ -363,12 +347,12 @@ function buildSessionConfigOptions(
     },
     {
       type: 'select',
-      id: CONFIG_AMP_MODE,
-      name: 'Amp Mode',
-      description: 'Select the Amp execution mode.',
+      id: CONFIG_AMP_MODEL,
+      name: 'Model',
+      description: 'Select the model Amp uses for this session.',
       category: 'model',
-      currentValue: s.model,
-      options: ampModeOptions,
+      currentValue: currentModel ?? MODEL_DEFAULT_VALUE,
+      options: modelOptions,
     },
     {
       type: 'select',
@@ -423,8 +407,14 @@ interface SessionState {
   /** A local CLI process owns the session's fixed execution options. */
   processStarted: boolean;
   mode: PermissionMode;
-  model: string;
+  /** Selected model id; unset lets Amp pick. */
+  model?: string;
+  /** Selected plugin agent-mode key, passed as `--mode`. */
+  agentMode?: string;
+  /** Models discovered from the installed Amp CLI. */
   models: AmpModel[];
+  /** Agent modes registered by installed Amp plugins. */
+  agentModes: AmpModel[];
   effort: ReasoningEffort;
   executor: Executor;
   mcpConfig: AmpMcpConfig;
@@ -462,6 +452,8 @@ interface AmpAcpAgentOptions {
   replayRetry?: { attempts: number; delayMs: number };
   /** Override plugin-mode discovery; tests pass a stub to isolate from local plugins. */
   discoverPluginModes?: (cwd: string) => PluginAgentMode[];
+  /** Override model discovery; tests pass a stub to isolate from the Amp CLI. */
+  discoverModels?: (cwd: string) => DiscoveredAmpModel[];
 }
 
 export class AmpAcpAgent {
@@ -476,6 +468,7 @@ export class AmpAcpAgent {
   private exportThread: ThreadHistoryExporter;
   private replayRetry: { attempts: number; delayMs: number };
   private discoverPluginModes: (cwd: string) => PluginAgentMode[];
+  private discoverModels: (cwd: string) => DiscoveredAmpModel[];
   private warnedUnsupportedEffort = false;
 
   constructor(
@@ -491,6 +484,7 @@ export class AmpAcpAgent {
     this.exportThread = options.exportThread ?? exportThreadHistory;
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
     this.discoverPluginModes = options.discoverPluginModes ?? discoverPluginModesFromDir;
+    this.discoverModels = options.discoverModels ?? discoverModelsFromCli;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -560,8 +554,8 @@ export class AmpAcpAgent {
       steerNextPrompt: false,
       processStarted: false,
       mode: 'default',
-      model: 'medium',
-      models: buildAmpModels(this.discoverPluginModes(cwd)),
+      models: this.discoverModels(cwd),
+      agentModes: this.discoverPluginModes(cwd).map(agentModeToModel),
       effort: 'auto',
       executor: 'local',
       mcpConfig,
@@ -659,7 +653,30 @@ export class AmpAcpAgent {
     params: ResumeSessionRequest | LoadSessionRequest,
   ): SessionState {
     const cwd = params.cwd || mapping.cwd || process.cwd();
-    const models = buildAmpModels(this.discoverPluginModes(cwd));
+    const models = this.discoverModels(cwd);
+    const agentModes = this.discoverPluginModes(cwd).map(agentModeToModel);
+
+    // Restore the model selection. New sessions persist the channel
+    // explicitly (`model` vs `agentMode`); mappings written before that
+    // split stored either a dial value (now unset — Amp picks) or a plugin
+    // agent key. Provider/model ids remain models even if discovery fails.
+    let model: string | undefined;
+    let agentMode: string | undefined;
+    if (mapping.agentMode?.trim()) {
+      // Keep the persisted agent mode even when its plugin is not currently
+      // discovered; Amp is the authority on resolving it when the prompt runs.
+      agentMode = mapping.agentMode.trim();
+    } else if (mapping.model?.trim()) {
+      const persisted = mapping.model.trim();
+      if (!LEGACY_DIAL_MODES.has(persisted.toLowerCase())) {
+        if (persisted.includes('/') || models.some((candidate) => candidate.modelId === persisted)) {
+          model = persisted;
+        } else {
+          agentMode = persisted;
+        }
+      }
+    }
+
     return {
       threadId: mapping.threadId,
       active: null,
@@ -667,11 +684,10 @@ export class AmpAcpAgent {
       steerNextPrompt: false,
       processStarted: false,
       mode: mapping.mode && isPermissionMode(mapping.mode) ? mapping.mode : 'default',
-      // Keep the persisted Amp mode even when discovery does not currently
-      // list it (e.g. its plugin is temporarily unloaded); Amp is the
-      // authority on resolving or rejecting it when the prompt runs.
-      model: mapping.model?.trim() ? mapping.model : 'medium',
+      ...(model ? { model } : {}),
+      ...(agentMode ? { agentMode } : {}),
       models,
+      agentModes,
       effort: mapping.effort && isReasoningEffort(mapping.effort) ? mapping.effort : 'auto',
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
@@ -689,7 +705,8 @@ export class AmpAcpAgent {
       sessionId,
       threadId: s.threadId,
       mode: s.mode,
-      model: s.model,
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.agentMode ? { agentMode: s.agentMode } : {}),
       effort: s.effort,
       executor: s.executor,
       cwd: s.cwd,
@@ -1054,17 +1071,19 @@ export class AmpAcpAgent {
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
     if (transport.name === 'cli') s.processStarted = true;
     const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
-    // Local image turns run through the CLI even on the SDK transport.
-    const effortSupported = transport.name === 'cli' || (hasImages && s.executor !== 'orb');
-    if (effort && !effortSupported && !this.warnedUnsupportedEffort) {
+    // Explicit models use the CLI even on the SDK transport. Preserve the
+    // existing effort support for local image turns as well.
+    const featuresSupported = transport.name === 'cli' || !!s.model || (hasImages && s.executor !== 'orb');
+    if (effort && !featuresSupported && !this.warnedUnsupportedEffort) {
       this.warnedUnsupportedEffort = true;
       console.error('[acp] reasoning effort is only supported by the CLI transport; ignoring it for this agent process');
     }
     const options: AmpExecutionOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
-      mode: s.model,
-      ...(effort && effortSupported ? { effort } : {}),
+      ...(s.agentMode ? { agentMode: s.agentMode } : {}),
+      ...(s.model ? { model: s.model } : {}),
+      ...(effort && featuresSupported ? { effort } : {}),
       thinking: process.env.AMP_ACP_DISABLE_THINKING !== '1',
       executor: s.executor,
     };
@@ -1205,7 +1224,7 @@ export class AmpAcpAgent {
       throw new Error(`Unsupported value for ${params.configId}`);
     }
 
-    const next = { executor: s.executor, mode: s.mode, model: s.model, effort: s.effort };
+    const next = { executor: s.executor, mode: s.mode, model: s.model, agentMode: s.agentMode, effort: s.effort };
     switch (params.configId) {
       case CONFIG_EXECUTOR:
         if (!isExecutor(params.value)) {
@@ -1219,17 +1238,26 @@ export class AmpAcpAgent {
         }
         next.mode = params.value;
         break;
-      case CONFIG_AMP_MODE: {
-        // Amp accepts built-in modes and plugin-provided custom agent modes
-        // by key (case-insensitive). Discovery can lag Amp — a mode plugin
-        // installed after the last discovery is valid before amp-acp lists
-        // it — so any non-empty value passes through to Amp, which is the
-        // authority and rejects unknown modes when the prompt runs.
-        const mode = params.value.trim();
-        if (!mode) {
-          throw new Error('Amp mode must be a non-empty string');
+      case CONFIG_AMP_MODEL: {
+        // Provider/model ids use --model even when discovery is unavailable;
+        // plugin agent keys use --mode. Other values pass through as agents —
+        // Amp is the authority and rejects unknown values when the prompt
+        // runs. Discovery can lag Amp, so an id installed after the last
+        // discovery remains valid here.
+        const value = params.value.trim();
+        if (!value) {
+          throw new Error('Model must be a non-empty string');
         }
-        next.model = mode;
+        if (value === MODEL_DEFAULT_VALUE) {
+          next.model = undefined;
+          next.agentMode = undefined;
+        } else if (value.includes('/') || s.models.some((model) => model.modelId === value)) {
+          next.model = value;
+          next.agentMode = undefined;
+        } else {
+          next.agentMode = value;
+          next.model = undefined;
+        }
         break;
       }
       case CONFIG_REASONING_EFFORT:
@@ -1242,7 +1270,11 @@ export class AmpAcpAgent {
         throw new Error(`Unsupported config option: ${params.configId}`);
     }
 
-    const changed = next.executor !== s.executor || next.mode !== s.mode || next.model !== s.model || next.effort !== s.effort;
+    const changed = next.executor !== s.executor
+      || next.mode !== s.mode
+      || next.model !== s.model
+      || next.agentMode !== s.agentMode
+      || next.effort !== s.effort;
     if (changed) this.resetCliProcessForConfigChange(params.sessionId, s);
     Object.assign(s, next);
 

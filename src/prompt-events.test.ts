@@ -49,6 +49,7 @@ async function runPrompt(
       },
     },
     discoverPluginModes: () => [],
+    discoverModels: () => [],
   });
   await agent.initialize({ protocolVersion: 1, clientCapabilities });
   const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -177,6 +178,7 @@ describe('prompt usage, stop reason, and notices', () => {
     const agent = new AmpAcpAgent({ sessionUpdate: async () => {}, notify: async () => {} }, transport, {
       threadStore: { load: async () => null, save: async () => {} },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
     const prompt = agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'cancel me' }] });

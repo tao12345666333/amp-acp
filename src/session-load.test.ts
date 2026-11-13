@@ -35,9 +35,18 @@ const noHistory = async () => [];
 
 function createAgent(): InstanceType<typeof AmpAcpAgent> {
   return new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
+    orbTransport: {
+      name: 'sdk',
+      async *execute({ options }) {
+        capturedCalls.push({ options: { ...options } });
+        yield { type: 'system', subtype: 'init', session_id: 'T-01234567-89ab-cdef-0123-456789abcdef' };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    },
     exportThread: noHistory,
     replayRetry: { attempts: 1, delayMs: 0 },
     discoverPluginModes: () => [],
+    discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
   });
 }
 
@@ -101,7 +110,7 @@ describe('AmpAcpAgent session/load', () => {
     expect(capturedCalls[1]!.options.continue).toBe('T-01234567-89ab-cdef-0123-456789abcdef');
   });
 
-  it('restores persisted permission mode, Amp mode, reasoning effort, and execution environment', async () => {
+  it('restores persisted permission mode, Model, reasoning effort, and execution environment', async () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -111,8 +120,8 @@ describe('AmpAcpAgent session/load', () => {
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
-      value: 'high',
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
@@ -139,7 +148,7 @@ describe('AmpAcpAgent session/load', () => {
     });
 
     const byId = new Map(loaded.configOptions?.map((option) => [option.id, option]));
-    expect(byId.get('amp-mode')?.currentValue).toBe('high');
+    expect(byId.get('amp-model')?.currentValue).toBe('anthropic/claude-opus-5-5');
     expect(byId.get('permission')?.currentValue).toBe('bypass');
     expect(byId.get('reasoning-effort')?.currentValue).toBe('xhigh');
     expect(byId.get('execution-environment')?.currentValue).toBe('orb');
@@ -149,11 +158,12 @@ describe('AmpAcpAgent session/load', () => {
       prompt: [{ type: 'text', text: 'continue' }],
     });
     const lastCall = capturedCalls.at(-1)!;
-    expect(lastCall.options.mode).toBe('high');
+    expect(lastCall.options.mode).toBeUndefined();
     expect(lastCall.options.thinking).toBe(true);
     expect(lastCall.options.executor).toBe('orb');
-    // Orb uses the SDK transport, which does not expose CLI thread features.
-    expect(lastCall.options.effort).toBeUndefined();
+    // Explicit models retain their settings for the SDK's CLI fallback.
+    expect(lastCall.options.model).toBe('anthropic/claude-opus-5-5');
+    expect(lastCall.options.effort).toBe('xhigh');
     // Local-only options stay off Orb prompts even though bypass was persisted.
     expect(lastCall.options.dangerouslyAllowAll).toBeUndefined();
   });
@@ -188,6 +198,7 @@ describe('AmpAcpAgent session/load', () => {
     const second = new AmpAcpAgent(capturingClient, createAmpTransport('sdk'), {
       exportThread: fakeExport,
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
     await second.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
@@ -221,6 +232,7 @@ describe('AmpAcpAgent session/load', () => {
     const second = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
       exportThread: failingExport,
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await second.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const loaded = await second.loadSession({ sessionId: session.sessionId, cwd: '/tmp', mcpServers: [] });
@@ -251,8 +263,8 @@ describe('AmpAcpAgent session/load', () => {
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
-      value: 'ultra',
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
     });
 
     const second = createAgent();
@@ -264,6 +276,6 @@ describe('AmpAcpAgent session/load', () => {
     });
 
     const byId = new Map(resumed.configOptions?.map((option) => [option.id, option]));
-    expect(byId.get('amp-mode')?.currentValue).toBe('ultra');
+    expect(byId.get('amp-model')?.currentValue).toBe('anthropic/claude-opus-5-5');
   });
 });

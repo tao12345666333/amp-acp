@@ -49,6 +49,7 @@ describe('Amp ACP thread lifecycle extension', () => {
     const agent = new AmpAcpAgent(client, transportWithThread(requests), {
       threadStore: store,
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     const initialized = await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({ cwd: '/tmp/project', mcpServers: [] });
@@ -86,6 +87,7 @@ describe('Amp ACP thread lifecycle extension', () => {
     const restartedAgent = new AmpAcpAgent(client, transportWithThread(requests), {
       threadStore: store,
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
 
     await restartedAgent.resumeSession({
@@ -113,6 +115,7 @@ describe('Amp ACP thread lifecycle extension', () => {
         operations.push({ threadId: targetThreadId, archived });
       },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
 
     expect(await agent.extMethod('amp-acp/thread/set-archived', {
@@ -146,6 +149,7 @@ describe('Amp ACP thread lifecycle extension', () => {
         operations.push(targetThreadId);
       },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
 
     await expect(agent.extMethod('amp-acp/thread/set-archived', {

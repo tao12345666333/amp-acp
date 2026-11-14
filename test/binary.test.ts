@@ -168,7 +168,7 @@ describe('Binary integration tests', () => {
     expect(configOptions.map((option) => option.id)).toEqual([
       'execution-environment',
       'permission',
-      'amp-mode',
+      'amp-model',
       'reasoning-effort',
     ]);
     expect(configOptions.map((option) => option.category)).toEqual([
@@ -180,8 +180,8 @@ describe('Binary integration tests', () => {
     const executor = configOptions.find((option) => option.id === 'execution-environment')!;
     expect(executor.currentValue).toBe('local');
     expect(executor.options?.map((option) => option.value)).toEqual(['local', 'orb']);
-    const mode = configOptions.find((option) => option.id === 'amp-mode')!;
-    expect(mode.currentValue).toBe('medium');
+    const model = configOptions.find((option) => option.id === 'amp-model')!;
+    expect(model.currentValue).toBe('default');
     const effort = configOptions.find((option) => option.id === 'reasoning-effort')!;
     expect(effort.currentValue).toBe('auto');
     expect(effort.options?.map((option) => option.value)).toEqual([
@@ -194,13 +194,13 @@ describe('Binary integration tests', () => {
       'xhigh',
       'max',
     ]);
-    // Built-in modes always come first; agent modes registered by plugins
-    // installed on the machine running the test are appended after them.
-    const values = mode.options?.map((option) => option.value) ?? [];
-    expect(values.slice(0, 4)).toEqual(['low', 'medium', 'high', 'ultra']);
+    // "Default" (Amp picks) always comes first; models discovered from the
+    // installed Amp CLI and agent modes registered by plugins follow it.
+    const values = model.options?.map((option) => option.value) ?? [];
+    expect(values[0]).toBe('default');
   });
 
-  it('session/set_config_option updates Amp mode', async () => {
+  it('session/set_config_option updates Model', async () => {
     const sessionResp = await sendAndWait('session/new', {
       cwd: '/tmp/test',
       mcpServers: [],
@@ -209,16 +209,17 @@ describe('Binary integration tests', () => {
 
     const resp = await sendAndWait('session/set_config_option', {
       sessionId,
-      configId: 'amp-mode',
-      value: 'low',
+      configId: 'amp-model',
+      value: 'acp-test-model',
     });
 
     expect(resp.result).toBeDefined();
     const configOptions = resp.result!.configOptions as Array<{ id: string; currentValue?: string; options?: Array<{ value: string }> }>;
-    const mode = configOptions.find((option) => option.id === 'amp-mode')!;
-    expect(mode.currentValue).toBe('low');
-    const values = mode.options?.map((option) => option.value) ?? [];
-    expect(values.slice(0, 4)).toEqual(['low', 'medium', 'high', 'ultra']);
+    const model = configOptions.find((option) => option.id === 'amp-model')!;
+    expect(model.currentValue).toBe('acp-test-model');
+    const values = model.options?.map((option) => option.value) ?? [];
+    expect(values[0]).toBe('default');
+    expect(values).toContain('acp-test-model');
   });
 
   it('session/set_config_option updates reasoning effort', async () => {

@@ -6,7 +6,7 @@
       "name": "amp-acp",
       "dependencies": {
         "@agentclientprotocol/sdk": "2.4.0",
-        "@ampcode/sdk": "0.1.0-20260918210405-g81edbf0",
+        "@ampcode/sdk": "0.1.0-20261028101623-g93a0da1",
       },
       "devDependencies": {
         "@types/bun": "^1.2.5",
@@ -17,19 +17,19 @@
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.4.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg=="],
 
-    "@ampcode/cli": ["@ampcode/cli@0.0.1790366488-gdd50cc", "", { "optionalDependencies": { "@ampcode/cli-darwin-arm64": "0.0.1790366488-gdd50cc", "@ampcode/cli-darwin-x64": "0.0.1790366488-gdd50cc", "@ampcode/cli-linux-arm64": "0.0.1790366488-gdd50cc", "@ampcode/cli-linux-x64": "0.0.1790366488-gdd50cc", "@ampcode/cli-win32-x64": "0.0.1790366488-gdd50cc" }, "bin": { "amp": "bin/amp.exe" } }, "sha512-MxEeuLDLkfA3WBvSDkM1gi2Ct02pizVV6FA3nHTO4up9a11QpUdw3OypaQ4W/f3C1Hk6qwynYW7HrhZsJQxCLQ=="],
+    "@ampcode/cli": ["@ampcode/cli@0.0.1794672034-g01d6fa", "", { "optionalDependencies": { "@ampcode/cli-darwin-arm64": "0.0.1794672034-g01d6fa", "@ampcode/cli-darwin-x64": "0.0.1794672034-g01d6fa", "@ampcode/cli-linux-arm64": "0.0.1794672034-g01d6fa", "@ampcode/cli-linux-x64": "0.0.1794672034-g01d6fa", "@ampcode/cli-win32-x64": "0.0.1794672034-g01d6fa" }, "bin": { "amp": "bin/amp.exe" } }, "sha512-4DjYK+ZzbyjTGR8NEwhM9V+5GAVaFexm8J3EA8v2XYzpOS+Sr/79lqv8+gsgbXpW6Xg2tqo38udBaAH7g9zFAA=="],
 
-    "@ampcode/cli-darwin-arm64": ["@ampcode/cli-darwin-arm64@0.0.1790366488-gdd50cc", "", { "os": "darwin", "cpu": "arm64" }, "sha512-CwqMO8DpTcCaol/rlQ2UWJGs8u7Tup8igcUgnwpJ3Pql7WvLz8NWQTeqdH82z8+Cka7bWjjN4f8JPvPeIV72nQ=="],
+    "@ampcode/cli-darwin-arm64": ["@ampcode/cli-darwin-arm64@0.0.1794672034-g01d6fa", "", { "os": "darwin", "cpu": "arm64" }, "sha512-m/a2bSDVYObm7+2Pz6F4He3607l7ESm5Uz0hio4ZgaC+VsJsofr5u52y3MPQDD+BKzXaIj7AnCVt0GayhTTxlg=="],
 
-    "@ampcode/cli-darwin-x64": ["@ampcode/cli-darwin-x64@0.0.1790366488-gdd50cc", "", { "os": "darwin", "cpu": "x64" }, "sha512-WbnLBDl49H4gTfA7qwVF1RQZbk992K3nspD94TmutH0zBCMHO1BqdlDuC4TJgg/CILldkDQXcYBoWMGdHOeL4g=="],
+    "@ampcode/cli-darwin-x64": ["@ampcode/cli-darwin-x64@0.0.1794672034-g01d6fa", "", { "os": "darwin", "cpu": "x64" }, "sha512-odzOAi1pxGqnX8E6xZRJl+JXVsotOXwEf520ZW6cfard6vt6n93RkhEIaJHcsa8zul4dfCoVTsBc/z5AL4jM+w=="],
 
-    "@ampcode/cli-linux-arm64": ["@ampcode/cli-linux-arm64@0.0.1790366488-gdd50cc", "", { "os": "linux", "cpu": "arm64" }, "sha512-SmZ58W3LtSrTuhda/nLwb8/+h6mtQTtQJlWdnMciDFiF0yQQNZu5SxtsaAn99FvyBhnX1FWLhvZi4JJhKNijxA=="],
+    "@ampcode/cli-linux-arm64": ["@ampcode/cli-linux-arm64@0.0.1794672034-g01d6fa", "", { "os": "linux", "cpu": "arm64" }, "sha512-fkkzCPu4Nd0P/fmfICfxHAoDsS58OhG1hDMCjgeAECEA0FqV3h6nem/nbOJ7OAjjv9n9JpipQGFRfXVg++3JBQ=="],
 
-    "@ampcode/cli-linux-x64": ["@ampcode/cli-linux-x64@0.0.1790366488-gdd50cc", "", { "os": "linux", "cpu": "x64" }, "sha512-V/V8I1+32zN067xRP4i/7wkJMeTInaYRkM5nrk20haxs/Kll60qbGIeIPNbexJ2BaEFyE7CAdMU6dSXGuXeW+w=="],
+    "@ampcode/cli-linux-x64": ["@ampcode/cli-linux-x64@0.0.1794672034-g01d6fa", "", { "os": "linux", "cpu": "x64" }, "sha512-dmtKIAisLCGK3ZaktiZHNPII2QQl4vvlHP1elbiygKWh1w2aGz/yTfx5OpE+iqiCecZe6igrurRlPbdLpKIMeQ=="],
 
-    "@ampcode/cli-win32-x64": ["@ampcode/cli-win32-x64@0.0.1790366488-gdd50cc", "", { "os": "win32", "cpu": "x64" }, "sha512-61ccj21zelKtlbCfFbRJz/eTr7OhfC0LA1O2lYQTOvM1RcBxkU06evp+vQh70BA1s5iwyRX1tu3AzRQPV9c9iQ=="],
+    "@ampcode/cli-win32-x64": ["@ampcode/cli-win32-x64@0.0.1794672034-g01d6fa", "", { "os": "win32", "cpu": "x64" }, "sha512-yipmEefnQjB+/Ye3zi5Iefh30fn5un9GPokfzkyLi+BIVhZLBBo4HneRkwznJGLHEJvxNeMuYCDSTGeB1RhleA=="],
 
-    "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20260918210405-g81edbf0", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-OQDZ70FCAOcRTxCLO5gU+gDZDXFWTG16C0bdx9w41s9PrXhu/DU/bEvjvJSTdvs+PJGFhMbRv65dd8/pfbtrlg=="],
+    "@ampcode/sdk": ["@ampcode/sdk@0.1.0-20261028101623-g93a0da1", "", { "dependencies": { "@ampcode/cli": "latest", "zod": "^3.23.8" }, "bin": { "amp-sdk": "bin/amp-sdk.js" } }, "sha512-4jVyfZ26ohaQWvSpZF/NhXIcnMoFXzPNIv9y+W0rGHiATmyj/TqSx4mYIGcAWw5BtSb4JkHR37NTV4fBU4jNYQ=="],
 
     "@types/bun": ["@types/bun@1.3.8", "", { "dependencies": { "bun-types": "1.3.8" } }, "sha512-3LvWJ2q5GerAXYxO2mffLTqOzEu5qnhEAlh48Vnu8WQfnmSwbgagjGZV6BoHKJztENYEDn6QmVd949W4uESRJA=="],
 

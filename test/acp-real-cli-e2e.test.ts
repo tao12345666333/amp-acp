@@ -15,6 +15,7 @@ import path from 'node:path';
 const RUN_LIVE_E2E = process.env.AMP_ACP_LIVE_E2E === '1';
 const BINARY_PATH = path.resolve(__dirname, '../dist/amp-acp-test');
 const REAL_CLI_PATH = process.env.AMP_ACP_REAL_CLI_PATH ?? 'amp';
+const REAL_MODEL = process.env.AMP_ACP_REAL_MODEL?.trim();
 const CONTINUATION_TOKEN = 'Kestrel-4179-Cobalt';
 const CUSTOM_MODE_KEY = 'acp-flash';
 const liveDescribe = RUN_LIVE_E2E ? describe : describe.skip;
@@ -75,7 +76,7 @@ async function stopProcess(process: ChildProcess): Promise<void> {
 }
 
 liveDescribe('ACP client to real Amp CLI', () => {
-  it('streams two low-mode turns on the same real Amp thread', async () => {
+  it('streams two selected-model turns on the same real Amp thread', async () => {
     const process = spawn(BINARY_PATH, [], {
       cwd: fixtureDir,
       env: {
@@ -89,6 +90,7 @@ liveDescribe('ACP client to real Amp CLI', () => {
     process.stderr!.on('data', (chunk: Buffer) => stderr.push(chunk));
 
     const updates: SessionNotification[] = [];
+    let selectedModel = 'default';
     const stream = ndJsonStream(
       Writable.toWeb(process.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(process.stdout!) as ReadableStream<Uint8Array>,
@@ -108,10 +110,22 @@ liveDescribe('ACP client to real Amp CLI', () => {
             cwd: fixtureDir,
             mcpServers: [],
           });
+          // Select an explicit model so the prompt runs through `--model`.
+          // AMP_ACP_REAL_MODEL makes the choice deterministic when the first
+          // discovered provider is unavailable, for example during a pause.
+          const modelOption = session.configOptions?.find((option) => option.id === 'amp-model');
+          const discoveredModels = (modelOption?.options ?? [])
+            .map((option) => option.value)
+            .filter((value) => value !== 'default');
+          if (REAL_MODEL && !discoveredModels.includes(REAL_MODEL)) {
+            throw new Error(`AMP_ACP_REAL_MODEL ${REAL_MODEL} is not in the discovered model list`);
+          }
+          selectedModel = REAL_MODEL ?? discoveredModels[0] ?? 'default';
+          console.error(`[real-e2e] selected model ${selectedModel}`);
           const config = await agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
-            configId: 'amp-mode',
-            value: 'low',
+            configId: 'amp-model',
+            value: selectedModel,
           });
 
           const first = await agent.request(methods.agent.session.prompt, {
@@ -140,7 +154,8 @@ liveDescribe('ACP client to real Amp CLI', () => {
         .map((update) => update.content.text)
         .join('');
 
-      expect(result.config.configOptions.find((option) => option.id === 'amp-mode')?.currentValue).toBe('low');
+      expect(result.config.configOptions.find((option) => option.id === 'amp-model')?.currentValue)
+        .toBe(selectedModel);
       expect(result.first.stopReason).toBe('end_turn');
       expect(result.second.stopReason).toBe('end_turn');
       expect(assistantText(0, result.firstUpdateCount)).toContain('AMP_ACP_REAL_E2E_OK');
@@ -197,7 +212,7 @@ liveDescribe('ACP client to real Amp CLI', () => {
           });
           const config = await agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
-            configId: 'amp-mode',
+            configId: 'amp-model',
             value: CUSTOM_MODE_KEY,
           });
           const prompt = await agent.request(methods.agent.session.prompt, {
@@ -211,10 +226,10 @@ liveDescribe('ACP client to real Amp CLI', () => {
           return { session, config, prompt };
         });
 
-      const ampMode = result.session.configOptions?.find((option) => option.id === 'amp-mode');
-      const modeValues = (ampMode?.options ?? []).map((option) => option.value);
-      expect(modeValues).toContain(CUSTOM_MODE_KEY);
-      expect(result.config.configOptions.find((option) => option.id === 'amp-mode')?.currentValue)
+      const ampModel = result.session.configOptions?.find((option) => option.id === 'amp-model');
+      const modelValues = (ampModel?.options ?? []).map((option) => option.value);
+      expect(modelValues).toContain(CUSTOM_MODE_KEY);
+      expect(result.config.configOptions.find((option) => option.id === 'amp-model')?.currentValue)
         .toBe(CUSTOM_MODE_KEY);
       expect(result.prompt.stopReason).toBe('end_turn');
 

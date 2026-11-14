@@ -54,6 +54,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
         },
       },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   });
@@ -80,31 +81,53 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     expect(capturedCalls).toHaveLength(1);
     expect(capturedCalls[0]!.options.continue).toBeUndefined();
-    expect(capturedCalls[0]!.options.mode).toBe('medium');
+    // No model or agent mode is selected by default; Amp picks.
+    expect(capturedCalls[0]!.options.mode).toBeUndefined();
+    expect(capturedCalls[0]!.options.model).toBeUndefined();
   });
 
-  it('passes selected Amp mode to the SDK', async () => {
+  it('passes a selected agent mode to the SDK', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'ultra' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-model', value: 'grok45' });
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],
     });
 
     expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('ultra');
+    expect(capturedCalls[0]!.options.mode).toBe('grok45');
+    expect(capturedCalls[0]!.options.model).toBeUndefined();
   });
 
-  it('passes low mode to the SDK', async () => {
+  it('passes a selected model to the CLI transport', async () => {
+    const localCalls: { options: Record<string, unknown> }[] = [];
+    const localTransport = {
+      name: 'cli' as const,
+      async *execute({ options }: { options: Record<string, unknown> }) {
+        localCalls.push({ options });
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      discoverPluginModes: () => [],
+      discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
+    });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-mode', value: 'low' });
+    await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
+    });
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],
     });
 
-    expect(capturedCalls).toHaveLength(1);
-    expect(capturedCalls[0]!.options.mode).toBe('low');
+    expect(localCalls).toHaveLength(1);
+    expect(localCalls[0]!.options.model).toBe('anthropic/claude-opus-5-5');
+    expect(localCalls[0]!.options.mode).toBeUndefined();
   });
 
   it('restarts the CLI process after a config change', async () => {
@@ -124,8 +147,8 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     await expect(agent.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
-      value: 'high',
+      configId: 'amp-model',
+      value: 'some-other-model',
     })).resolves.toMatchObject({ configOptions: expect.any(Array) });
     expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
   });
@@ -180,6 +203,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     const options = {
       threadStore: new FileThreadMappingStore(stateDir),
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     };
     agent = new AmpAcpAgent(mockClient, transport, options);
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -381,6 +405,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
         },
       },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await cliAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
 
@@ -419,6 +444,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
         },
       },
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await sdkAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await sdkAgent.newSession({ cwd: '/tmp', mcpServers: [] });
@@ -474,6 +500,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     agent = new AmpAcpAgent(mockClient, localTransport, {
       orbTransport: createAmpTransport('sdk'),
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({
@@ -499,8 +526,9 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(capturedCalls[0]!.options).toMatchObject({
       executor: 'orb',
       project: 'acme/widgets',
-      mode: 'medium',
     });
+    expect(capturedCalls[0]!.options.mode).toBeUndefined();
+    expect(capturedCalls[0]!.options.model).toBeUndefined();
     expect(capturedCalls[0]!.options.dangerouslyAllowAll).toBeUndefined();
     expect(capturedCalls[0]!.options.mcpConfig).toBeUndefined();
   });
@@ -543,6 +571,7 @@ describe('AmpAcpAgent prompt() continue option', () => {
     agent = new AmpAcpAgent(mockClient, localTransport, {
       orbTransport: createAmpTransport('sdk'),
       discoverPluginModes: () => [],
+      discoverModels: () => [],
     });
     await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await agent.newSession({

@@ -112,6 +112,7 @@ describe('ACP Protocol End-to-End', () => {
       (agentClient) => new AmpAcpAgent(agentClient, transport, {
         orbTransport: transport,
         discoverPluginModes: () => [],
+        discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
       }),
     );
     app.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
@@ -268,7 +269,7 @@ describe('ACP Protocol End-to-End', () => {
     expect(response.configOptions?.map((option) => option.id)).toEqual([
       'execution-environment',
       'permission',
-      'amp-mode',
+      'amp-model',
       'reasoning-effort',
     ]);
     expect(response.configOptions?.map((option) => option.category)).toEqual([
@@ -284,13 +285,11 @@ describe('ACP Protocol End-to-End', () => {
         { value: 'orb', name: 'Orb' },
       ],
     });
-    expect(response.configOptions?.find((option) => option.id === 'amp-mode')).toMatchObject({
-      currentValue: 'medium',
+    expect(response.configOptions?.find((option) => option.id === 'amp-model')).toMatchObject({
+      currentValue: 'default',
       options: [
-        { value: 'low', name: 'Low' },
-        { value: 'medium', name: 'Medium' },
-        { value: 'high', name: 'High' },
-        { value: 'ultra', name: 'Ultra' },
+        { value: 'default', name: 'Default' },
+        { value: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' },
       ],
     });
 
@@ -311,13 +310,13 @@ describe('ACP Protocol End-to-End', () => {
 
     const result = await agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
-      value: 'high',
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
     });
 
     expect(result.configOptions).toHaveLength(4);
-    expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
-      currentValue: 'high',
+    expect(result.configOptions.find((option) => option.id === 'amp-model')).toMatchObject({
+      currentValue: 'anthropic/claude-opus-5-5',
     });
   });
 
@@ -382,16 +381,16 @@ describe('ACP Protocol End-to-End', () => {
     // resolving mode keys.
     const result = await agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
+      configId: 'amp-model',
       value: 'acp-flash',
     });
 
-    expect(result.configOptions.find((option) => option.id === 'amp-mode')).toMatchObject({
+    expect(result.configOptions.find((option) => option.id === 'amp-model')).toMatchObject({
       currentValue: 'acp-flash',
     });
   });
 
-  it('should reject an empty Amp mode', async () => {
+  it('should reject an empty Model selection', async () => {
     const session = await agentConnection.newSession({
       cwd: '/tmp',
       mcpServers: [],
@@ -399,7 +398,7 @@ describe('ACP Protocol End-to-End', () => {
 
     await expect(agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-mode',
+      configId: 'amp-model',
       value: '   ',
     })).rejects.toThrow('Internal error');
   });

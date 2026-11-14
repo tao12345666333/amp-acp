@@ -129,7 +129,7 @@ describe('ACP client to compiled amp-acp binary', () => {
             prompt: [{ type: 'text', text: 'execution failure' }],
           })).rejects.toMatchObject({
             code: -32603,
-            message: 'Internal error',
+            message: 'Internal error: execution unavailable',
             data: { details: 'execution unavailable' },
           });
           const recovered = await agent.request(methods.agent.session.prompt, {

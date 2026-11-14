@@ -64,6 +64,7 @@ async function setup() {
       },
     },
     discoverPluginModes: () => [],
+    discoverModels: () => [],
   });
   await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
   const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });

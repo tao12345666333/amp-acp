@@ -47,25 +47,27 @@ export type AmpMcpServerConfig =
 export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 
 /**
- * Amp agent mode: one of the built-in modes (`low`, `medium`, `high`,
- * `ultra`) or an agent mode registered by an installed Amp plugin
- * (e.g. "grok45"), referenced by key. Amp resolves the actual model routing;
- * both the CLI --mode flag and the Amp SDK accept the mode key as a string.
+ * Amp agent mode key, registered by an installed Amp plugin (e.g.
+ * "grok45") or another agent such as "external-agent:claude-code".
+ * Model selections use `--model` instead of `--mode`.
  */
-export type AmpMode = 'low' | 'medium' | 'high' | 'ultra' | (string & {});
+export type AmpMode = string & {};
 
 /**
- * Amp reasoning effort. Effort is separate from `--mode`: mode selects the
- * model/routing tier, effort selects how much reasoning the model performs.
- * The Amp CLI accepts it as the `--features effort:<level>` thread feature;
- * there is no standalone `--effort` flag.
+ * Amp reasoning effort. Effort is a thread feature, separate from model
+ * selection: the model chooses what runs, effort chooses how much reasoning
+ * it performs. The Amp CLI accepts it as the `--features effort:<level>`
+ * thread feature used by this adapter.
  */
 export type AmpEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface AmpExecutionOptions {
   cwd: string;
   env?: Record<string, string>;
-  mode?: AmpMode;
+  /** Model id for `--model <provider/model>`; omitted to let Amp pick. */
+  model?: string;
+  /** Agent-mode key for `--mode <key>`; only agent selections use --mode. */
+  agentMode?: AmpMode;
   effort?: AmpEffort;
   /** Include Amp thinking blocks in the stream (`--stream-json-thinking`). */
   thinking?: boolean;
@@ -180,9 +182,9 @@ export async function setAmpThreadArchived(
 const sdkTransport: AmpTransport = {
   name: 'sdk',
   execute(request) {
-    // The pinned SDK validates streaming input as text-only, and remote
-    // executors reject streaming input altogether. Use the CLI image routes.
-    if (request.content) {
+    // The pinned SDK has no --model option and validates streaming input as
+    // text-only. Use the CLI for explicit models and image turns, including Orbs.
+    if (request.options.model || request.content) {
       const cli = createCliTransport();
       return (async function* () {
         try {
@@ -204,11 +206,10 @@ export function buildAmpSdkOptions(options: AmpExecutionOptions): AmpOptions {
   return {
     cwd: options.cwd,
     env: options.env,
-    mode: options.mode,
-    // `effort` is intentionally omitted: the Amp SDK maps it to a bare
-    // `--effort` flag, which current Amp CLI releases reject. Effort is a
-    // thread feature on the CLI transport (`--features effort:<level>`);
-    // the SDK transport (Orb) follows the mode's routing instead.
+    // Explicit models bypass the pinned SDK so they can use --model.
+    mode: options.agentMode,
+    // Keep the existing effort feature route on CLI turns; SDK-only turns
+    // use Amp's default effort rather than the SDK's separate --effort flag.
     ...(options.thinking !== undefined ? { thinking: options.thinking } : {}),
     executor: options.executor,
     project: options.project,
@@ -238,7 +239,8 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
     args.push('--stream-json-input');
   }
   args.push('--no-archive-after-execute');
-  if (options.mode) args.push('--mode', options.mode);
+  if (options.agentMode) args.push('--mode', options.agentMode);
+  if (options.model) args.push('--model', options.model);
   if (options.effort) args.push('--features', `effort:${options.effort}`);
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));

@@ -4,10 +4,16 @@
 
 ### Changed
 
-- Replace the hardcoded `low`/`medium`/`high`/`ultra` Amp dial modes with Amp's model selector. The `amp-mode` config option becomes `amp-model` (**Model**), listing every model the installed Amp CLI reports via `amp plugins show-agent-options`, with a *Default* entry that lets Amp pick. Selecting a model uses `--model <provider/model>` for local and Orb turns, with CLI fallback when using the pinned Amp SDK. Agent modes registered by Amp plugins remain in the selector and keep using `--mode`. Saved model selections survive discovery failures; sessions persisted with old dial values load as *Default*. Set `AMP_ACP_DISABLE_SHOW_AGENT_OPTIONS=1` to skip the model discovery (tests use this).
+- Replace the hardcoded `low`/`medium`/`high`/`ultra` Amp dial modes with Amp's model selector. The `amp-mode` config option becomes `amp-model` (**Model**), listing every model the installed Amp CLI reports via `amp plugins show-agent-options --json`, with a *Default* entry that lets Amp pick. Selecting a model uses `--model <provider/model>` for local and Orb turns, with CLI fallback when using the pinned Amp SDK. Agent modes registered by Amp plugins remain in the selector and keep using `--mode`. Saved model selections survive discovery failures; sessions persisted with old dial values load as *Default*. Set `AMP_ACP_DISABLE_SHOW_AGENT_OPTIONS=1` to skip the model discovery (tests use this).
 - Update `@agentclientprotocol/sdk` from 1.9.0 to 2.1.0 and migrate to its app APIs: the v1 adapter now registers typed handlers on `agent()`, sends `session/update` as notifications, initializes the connection explicitly, and keeps custom extension methods on a raw request fallback. ACP v1 remains the default for Zed, Lody, and T3 Code; the experimental v2 bridge keeps its existing behavior.
 
+### Compatibility
+
+- Model selection requires an Amp CLI with `--model` support. Older CLI versions may still list models through `show-agent-options` but reject the turn, so they are not supported for model selection; run `amp update` before selecting a model. Verified with Amp CLI `0.0.1794672034-g01d6fa`.
+
 ### Fixed
+
+- Return the underlying Amp CLI or transport error to ACP clients instead of only `Internal error`, so failures such as an unsupported `--model` flag identify the cause.
 
 - Reject embedded binary `resource` prompt blocks with an invalid-params error on ACP v1 and the experimental v2 bridge before starting a turn or invoking Amp.
 - Restore `session/list` through the experimental ACP v2 bridge, including working-directory filtering and cursor pagination, so clients can discover and import persisted sessions.

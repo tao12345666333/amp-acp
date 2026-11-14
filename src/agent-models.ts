@@ -11,7 +11,7 @@ export interface AmpModel {
 }
 
 export interface DiscoverModelsOptions {
-  /** Override for `amp plugins show-agent-options` stdout. Return null to skip CLI discovery. */
+  /** Override for `amp plugins show-agent-options --json` stdout. Return null to skip CLI discovery. */
   showAgentOptions?: (cwd: string) => string | null;
 }
 
@@ -25,48 +25,65 @@ const SHOW_AGENT_OPTIONS_TIMEOUT_MS = 8000;
  */
 export const SHOW_AGENT_OPTIONS_CACHE_TTL_MS = 60_000;
 
-/** Successful `amp plugins show-agent-options` stdout with its expiry, keyed by cwd + CLI path. */
+/** Successful `amp plugins show-agent-options --json` stdout with its expiry, keyed by cwd + CLI path. */
 const showAgentOptionsCache = new Map<string, { expires: number; stdout: string }>();
 
+interface ShowAgentOptionsModel {
+  id?: unknown;
+  name?: unknown;
+  displayName?: unknown;
+}
+
+interface ShowAgentOptionsPayload {
+  models?: unknown;
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 /**
- * Parse the `Models` section of `amp plugins show-agent-options` text output.
+ * Parse `amp plugins show-agent-options --json` output.
  *
- * Amp does not currently expose JSON for this command. The section is a
- * heading followed by indented `provider/model-id (Label)` lines:
- *
- *   Models
- *     anthropic/claude-opus-5-5 (Claude Opus 5.5)
- *
- * The next non-indented heading (currently `Built-in tools`) and everything
- * after it is ignored. Malformed lines are skipped so an unexpected CLI
- * output shape cannot break session setup.
+ * The payload is an object with a `models` array. Each model exposes an `id`
+ * such as `anthropic/claude-opus-5-5` and a `displayName`; older payloads may
+ * only include `name`. Entries without an id are skipped, duplicate ids keep
+ * their first occurrence, and malformed JSON produces an empty list so an
+ * unexpected CLI response cannot break session setup.
  */
 export function parseShowAgentOptions(output: string): AmpModel[] {
-  const text = output.replace(/\x1B\[[0-9;]*m/g, '');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return [];
+  }
+
+  const rawModels: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as ShowAgentOptionsPayload).models)
+      ? (parsed as ShowAgentOptionsPayload).models as unknown[]
+      : [];
+
   const models: AmpModel[] = [];
   const seen = new Set<string>();
-  let inModels = false;
-
-  for (const line of text.split(/\r?\n/)) {
-    if (!inModels) {
-      if (line.trim() === 'Models') inModels = true;
-      continue;
-    }
-    if (!line.trim()) continue;
-    if (!/^\s/.test(line)) break;
-    const model = line.match(/^\s+(\S+) \((.+)\)\s*$/);
-    if (!model) continue;
-    const modelId = model[1];
-    if (seen.has(modelId)) continue;
+  for (const raw of rawModels) {
+    if (!raw || typeof raw !== 'object') continue;
+    const entry = raw as ShowAgentOptionsModel;
+    const modelId = stringField(entry.id);
+    if (!modelId || seen.has(modelId)) continue;
     seen.add(modelId);
-    models.push({ modelId, name: model[2] });
+    models.push({
+      modelId,
+      name: stringField(entry.displayName) || stringField(entry.name) || modelId,
+    });
   }
   return models;
 }
 
 /**
- * Run `amp plugins show-agent-options` in `cwd` and return stdout, or null on
- * any failure. Successful output is cached per process for
+ * Run `amp plugins show-agent-options --json` in `cwd` and return stdout, or
+ * null on any failure. Successful output is cached per process for
  * `(cwd, AMP_CLI_PATH)` and reused until SHOW_AGENT_OPTIONS_CACHE_TTL_MS old,
  * so `session/new` does not block the event loop on a spawn every time.
  * Failures are not cached, so a later session can retry.
@@ -79,7 +96,7 @@ export function readShowAgentOptions(cwd: string): string | null {
   const cached = showAgentOptionsCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.stdout;
   try {
-    const result = spawnSync(command, ['plugins', 'show-agent-options'], {
+    const result = spawnSync(command, ['plugins', 'show-agent-options', '--json'], {
       cwd,
       encoding: 'utf8',
       timeout: SHOW_AGENT_OPTIONS_TIMEOUT_MS,
@@ -97,7 +114,7 @@ export function readShowAgentOptions(cwd: string): string | null {
   }
 }
 
-/** Drop cached `amp plugins show-agent-options` output. Used by tests. */
+/** Drop cached `amp plugins show-agent-options --json` output. Used by tests. */
 export function clearShowAgentOptionsCache(): void {
   showAgentOptionsCache.clear();
 }

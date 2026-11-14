@@ -1185,7 +1185,12 @@ export class AmpAcpAgent {
         throw RequestError.authRequired();
       }
       console.error('[amp] Execution error:', err);
-      throw err;
+      if (err instanceof RequestError) throw err;
+      const detail = errorDetail(err);
+      throw RequestError.internalError(
+        detail ? { details: detail } : undefined,
+        detail || undefined,
+      );
     } finally {
       s.updatedAt = new Date().toISOString();
       await this.publishSessionInfo(params.sessionId, s);
@@ -1432,6 +1437,16 @@ export class AmpAcpAgent {
     return { version: 1, threadId: params.threadId, archived: params.archived };
   }
 
+}
+
+const MAX_ERROR_DETAIL_LENGTH = 2_000;
+
+function errorDetail(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const clean = raw.replace(/\x1B\[[0-9;]*m/g, '').trim();
+  return clean.length > MAX_ERROR_DETAIL_LENGTH
+    ? `${clean.slice(0, MAX_ERROR_DETAIL_LENGTH)}...`
+    : clean;
 }
 
 export function isAuthError(message: string): boolean {

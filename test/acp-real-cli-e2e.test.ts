@@ -15,6 +15,7 @@ import path from 'node:path';
 const RUN_LIVE_E2E = process.env.AMP_ACP_LIVE_E2E === '1';
 const BINARY_PATH = path.resolve(__dirname, '../dist/amp-acp-test');
 const REAL_CLI_PATH = process.env.AMP_ACP_REAL_CLI_PATH ?? 'amp';
+const REAL_MODEL = process.env.AMP_ACP_REAL_MODEL?.trim();
 const CONTINUATION_TOKEN = 'Kestrel-4179-Cobalt';
 const CUSTOM_MODE_KEY = 'acp-flash';
 const liveDescribe = RUN_LIVE_E2E ? describe : describe.skip;
@@ -75,7 +76,7 @@ async function stopProcess(process: ChildProcess): Promise<void> {
 }
 
 liveDescribe('ACP client to real Amp CLI', () => {
-  it('streams two low-mode turns on the same real Amp thread', async () => {
+  it('streams two selected-model turns on the same real Amp thread', async () => {
     const process = spawn(BINARY_PATH, [], {
       cwd: fixtureDir,
       env: {
@@ -109,12 +110,18 @@ liveDescribe('ACP client to real Amp CLI', () => {
             cwd: fixtureDir,
             mcpServers: [],
           });
-          // Select the first discovered model from the Model selector so the
-          // prompt runs with an explicit `--model` selection.
+          // Select an explicit model so the prompt runs through `--model`.
+          // AMP_ACP_REAL_MODEL makes the choice deterministic when the first
+          // discovered provider is unavailable, for example during a pause.
           const modelOption = session.configOptions?.find((option) => option.id === 'amp-model');
-          const firstModel = (modelOption?.options ?? []).map((option) => option.value)
-            .find((value) => value !== 'default');
-          selectedModel = firstModel ?? 'default';
+          const discoveredModels = (modelOption?.options ?? [])
+            .map((option) => option.value)
+            .filter((value) => value !== 'default');
+          if (REAL_MODEL && !discoveredModels.includes(REAL_MODEL)) {
+            throw new Error(`AMP_ACP_REAL_MODEL ${REAL_MODEL} is not in the discovered model list`);
+          }
+          selectedModel = REAL_MODEL ?? discoveredModels[0] ?? 'default';
+          console.error(`[real-e2e] selected model ${selectedModel}`);
           const config = await agent.request(methods.agent.session.setConfigOption, {
             sessionId: session.sessionId,
             configId: 'amp-model',

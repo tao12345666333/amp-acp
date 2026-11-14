@@ -2,70 +2,71 @@ import { describe, expect, it } from 'bun:test';
 import { discoverModels, parseShowAgentOptions } from './agent-models.js';
 
 describe('parseShowAgentOptions', () => {
-  it('parses the Models section of amp plugins show-agent-options output', () => {
-    const output = `Models
-  anthropic/claude-opus-5-5 (Claude Opus 5.5)
-  openai/gpt-6-sol (GPT-6 Sol)
-
-Built-in tools
-  create_file
-  edit_file
-`;
+  it('parses the models array from amp plugins show-agent-options --json', () => {
+    const output = JSON.stringify({
+      models: [
+        { id: 'anthropic/claude-opus-5-5', name: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
+        { id: 'openai/gpt-6-sol', name: 'gpt-6-sol', displayName: 'GPT-6 Sol' },
+      ],
+      tools: [{ id: 'create_file' }],
+    });
     expect(parseShowAgentOptions(output)).toEqual([
       { modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' },
       { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
     ]);
   });
 
-  it('stops at the first non-indented heading after Models', () => {
-    const output = `Models
-  openai/gpt-6-sol (GPT-6 Sol)
-Something Else
-  not/a-model (Nope)
-`;
+  it('falls back to name and then the model id when displayName is missing', () => {
+    const output = JSON.stringify({
+      models: [
+        { id: 'acme/model-a', name: 'Model A' },
+        { id: 'acme/model-b' },
+      ],
+    });
     expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
+      { modelId: 'acme/model-a', name: 'Model A' },
+      { modelId: 'acme/model-b', name: 'acme/model-b' },
     ]);
   });
 
-  it('ignores output without a Models section', () => {
-    expect(parseShowAgentOptions('Built-in tools\n  create_file\n')).toEqual([]);
-    expect(parseShowAgentOptions('')).toEqual([]);
+  it('accepts a top-level models array', () => {
+    expect(parseShowAgentOptions(JSON.stringify([
+      { id: 'acme/model', displayName: 'Model' },
+    ]))).toEqual([{ modelId: 'acme/model', name: 'Model' }]);
   });
 
-  it('skips malformed entry lines', () => {
-    const output = `Models
-  no-label-here
-  (Missing id)
-  openai/gpt-6-sol (GPT-6 Sol)
-`;
+  it('ignores malformed entries and non-string ids', () => {
+    const output = JSON.stringify({
+      models: [
+        null,
+        'not-an-object',
+        { displayName: 'Missing id' },
+        { id: 42, displayName: 'Numeric id' },
+        { id: '  acme/model  ', displayName: '  Model  ' },
+      ],
+    });
     expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
-    ]);
-  });
-
-  it('strips ANSI color codes before parsing', () => {
-    const output = '\x1B[1mModels\x1B[0m\n  \x1B[36mopenai/gpt-6-sol\x1B[0m (GPT-6 Sol)\n';
-    expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
+      { modelId: 'acme/model', name: 'Model' },
     ]);
   });
 
   it('keeps the first occurrence of a duplicate model id', () => {
-    const output = `Models
-  openai/gpt-6-sol (GPT-6 Sol)
-  openai/gpt-6-sol (Duplicate)
-`;
+    const output = JSON.stringify({
+      models: [
+        { id: 'acme/model', displayName: 'First' },
+        { id: 'acme/model', displayName: 'Duplicate' },
+      ],
+    });
     expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
+      { modelId: 'acme/model', name: 'First' },
     ]);
   });
 
-  it('handles labels containing parentheses', () => {
-    const output = 'Models\n  acme/model (Model (preview))\n';
-    expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'acme/model', name: 'Model (preview)' },
-    ]);
+  it('returns an empty list for malformed or unexpected output', () => {
+    expect(parseShowAgentOptions('')).toEqual([]);
+    expect(parseShowAgentOptions('Models\n  acme/model (Model)\n')).toEqual([]);
+    expect(parseShowAgentOptions('{"models": "not-an-array"}')).toEqual([]);
+    expect(parseShowAgentOptions('{"tools": []}')).toEqual([]);
   });
 });
 
@@ -76,7 +77,9 @@ describe('discoverModels', () => {
 
   it('parses the overridden CLI output', () => {
     const models = discoverModels('/tmp', {
-      showAgentOptions: () => 'Models\n  openai/gpt-6-sol (GPT-6 Sol)\n',
+      showAgentOptions: () => JSON.stringify({
+        models: [{ id: 'openai/gpt-6-sol', displayName: 'GPT-6 Sol' }],
+      }),
     });
     expect(models).toEqual([{ modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' }]);
   });

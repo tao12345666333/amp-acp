@@ -33,8 +33,14 @@ import { existsSync, writeFileSync } from 'node:fs';
 process.on('SIGTERM', () => setTimeout(() => process.exit(0), 25));
 let initialized = false;
 let repeatPending = false;
+// Keep init first in the stream: lines that arrive while it is delayed wait for it.
+let initPending;
 const repeatMarker = ${JSON.stringify(path.join(fixtureDir, 'repeat-seen'))};
 createInterface({ input: process.stdin }).on('line', (line) => {
+  if (initPending) initPending.then(() => handleLine(line));
+  else handleLine(line);
+});
+function handleLine(line) {
   const input = JSON.parse(line);
   const prompt = input.message.content.map((part) => part.text).join('');
   if (prompt === 'fail') {
@@ -45,7 +51,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     initialized = true;
     const init = () => console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'T-cli-test', process_id: process.pid }));
     if (prompt === 'early wait') {
-      setTimeout(init, 5);
+      initPending = new Promise((resolve) => setTimeout(() => {
+        init();
+        initPending = undefined;
+        resolve();
+      }, 5));
       return;
     }
     init();
@@ -111,7 +121,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     },
     result: { prompt, content: input.message.content, steer: input.steer, processId: process.pid },
   }));
-});
+}
 `);
 });
 

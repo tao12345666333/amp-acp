@@ -164,7 +164,19 @@ describe('ACP v2 adapter', () => {
       const sessionId = created.result?.sessionId;
       expect(typeof sessionId).toBe('string');
 
-      const updatesBefore = messages.filter((message) => message.method === 'session/update').length;
+      // session/new can emit available_commands_update asynchronously; only
+      // turn updates matter for a rejected prompt.
+      const turnUpdateCount = () => messages.filter((message) => {
+        if (message.method !== 'session/update') return false;
+        const params = message.params as {
+          sessionId?: unknown;
+          update?: { sessionUpdate?: unknown };
+        } | undefined;
+        return params?.sessionId === sessionId
+          && (params.update?.sessionUpdate === 'user_message_chunk'
+            || params.update?.sessionUpdate === 'state_update');
+      }).length;
+      const updatesBefore = turnUpdateCount();
       send(3, 'session/prompt', {
         sessionId,
         prompt: [
@@ -176,7 +188,7 @@ describe('ACP v2 adapter', () => {
       expect(rejected.result).toBeUndefined();
       expect(rejected.error?.code).toBe(-32602);
       expect(rejected.error?.message).toContain('Embedded binary resources are not supported');
-      expect(messages.filter((message) => message.method === 'session/update')).toHaveLength(updatesBefore);
+      expect(turnUpdateCount()).toBe(updatesBefore);
 
       send(4, 'session/prompt', {
         sessionId,

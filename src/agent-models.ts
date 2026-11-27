@@ -8,6 +8,8 @@ export interface AmpModel {
   modelId: string;
   /** Human-readable label shown in clients. */
   name: string;
+  /** Efforts the model accepts as `--effort`; empty when it has none, unset when unknown. */
+  efforts?: string[];
 }
 
 export interface DiscoverModelsOptions {
@@ -32,6 +34,7 @@ interface ShowAgentOptionsModel {
   id?: unknown;
   name?: unknown;
   displayName?: unknown;
+  capabilities?: { efforts?: unknown };
 }
 
 interface ShowAgentOptionsPayload {
@@ -73,9 +76,13 @@ export function parseShowAgentOptions(output: string): AmpModel[] {
     const modelId = stringField(entry.id);
     if (!modelId || seen.has(modelId)) continue;
     seen.add(modelId);
+    const efforts = entry.capabilities?.efforts;
     models.push({
       modelId,
       name: stringField(entry.displayName) || stringField(entry.name) || modelId,
+      ...(Array.isArray(efforts)
+        ? { efforts: efforts.filter((effort): effort is string => typeof effort === 'string') }
+        : entry.capabilities ? { efforts: [] } : {}),
     });
   }
   return models;

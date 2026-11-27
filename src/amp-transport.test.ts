@@ -281,8 +281,8 @@ process.exit(3);
       '--no-archive-after-execute',
       '--model',
       'anthropic/claude-opus-5-5',
-      '--features',
-      'effort:high',
+      '--effort',
+      'high',
     ]);
     expect(buildAmpSdkOptions({
       ...baseOptions,
@@ -299,8 +299,16 @@ process.exit(3);
     })).not.toHaveProperty('effort');
   });
 
-  it('omits the features flag when no effort is selected', () => {
-    expect(buildAmpCliArgs({ ...baseOptions, agentMode: 'acp-flash' })).not.toContain('--features');
+  it('omits model and effort when continuing a thread, which Amp rejects', () => {
+    const args = buildAmpCliArgs({
+      ...baseOptions,
+      model: 'anthropic/claude-opus-5-5',
+      effort: 'high',
+      continue: 'T-123',
+    });
+    expect(args.slice(0, 3)).toEqual(['threads', 'continue', 'T-123']);
+    expect(args).not.toContain('--model');
+    expect(args).not.toContain('--effort');
   });
 
   it('passes Orb execution options through to the SDK', () => {
@@ -354,7 +362,8 @@ if (args.includes('--orb-execute')) {
         'threads', 'continue', 'T-01234567-89ab-cdef-0123-456789abcdef',
         '--execute', '--stream-json',
         executor === 'orb' ? '--orb-execute' : '--stream-json-input',
-        '--no-archive-after-execute', '--model', 'openai/gpt-6-sol',
+        // The thread already pins its model; Amp rejects --model on continue.
+        '--no-archive-after-execute',
       ]);
     } finally {
       if (originalCliPath === undefined) delete process.env.AMP_CLI_PATH;

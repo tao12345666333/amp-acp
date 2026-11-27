@@ -147,10 +147,49 @@ describe('AmpAcpAgent prompt() continue option', () => {
 
     await expect(agent.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'amp-model',
-      value: 'some-other-model',
+      configId: 'permission',
+      value: 'bypass',
     })).resolves.toMatchObject({ configOptions: expect.any(Array) });
     expect(agent.sessions.get(session.sessionId)?.processStarted).toBe(false);
+  });
+
+  it('refuses a model or effort change once Amp created the thread', async () => {
+    const transport: AmpTransport = {
+      name: 'cli',
+      async *execute() {
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(mockClient, transport, {
+      discoverPluginModes: () => [],
+      discoverModels: () => [
+        { modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'high'] },
+        { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol', efforts: ['low', 'high'] },
+      ],
+    });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-model', value: 'anthropic/claude-opus-5-5' });
+    await agent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'reasoning-effort', value: 'low' });
+    await agent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'hello' }] });
+
+    await expect(agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-model',
+      value: 'openai/gpt-6-sol',
+    })).rejects.toThrow('Start a new session');
+    await expect(agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'high',
+    })).rejects.toThrow('Start a new session');
+    // Re-applying the current values is not a change.
+    await expect(agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'reasoning-effort',
+      value: 'low',
+    })).resolves.toMatchObject({ configOptions: expect.any(Array) });
+    expect(agent.sessions.get(session.sessionId)).toMatchObject({ model: 'anthropic/claude-opus-5-5', effort: 'low' });
   });
 
   it('allows config changes after cancellation before Amp reports its thread ID', async () => {
@@ -369,20 +408,20 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(capturedCalls[0]!.options.dangerouslyAllowAll).toBe(true);
   });
 
-  it('streams thinking to the SDK and leaves effort to CLI thread features', async () => {
+  it('streams thinking to the SDK and rejects an effort without a model', async () => {
     const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await agent.setSessionConfigOption({
+    // Amp accepts --effort only with --model.
+    await expect(agent.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'reasoning-effort',
       value: 'high',
-    });
+    })).rejects.toThrow('Unsupported reasoning effort');
     await agent.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'hello' }],
     });
 
     expect(capturedCalls).toHaveLength(1);
-    // The SDK maps effort to `--effort`, which current Amp CLI releases reject.
     expect(capturedCalls[0]!.options.effort).toBeUndefined();
     expect(capturedCalls[0]!.options.thinking).toBe(true);
   });
@@ -412,6 +451,11 @@ describe('AmpAcpAgent prompt() continue option', () => {
     const session = await cliAgent.newSession({ cwd: '/tmp', mcpServers: [] });
     await cliAgent.setSessionConfigOption({
       sessionId: session.sessionId,
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
+    });
+    await cliAgent.setSessionConfigOption({
+      sessionId: session.sessionId,
       configId: 'reasoning-effort',
       value: 'xhigh',
     });
@@ -421,50 +465,34 @@ describe('AmpAcpAgent prompt() continue option', () => {
     });
 
     expect(calls).toHaveLength(1);
+    expect(calls[0]!.model).toBe('anthropic/claude-opus-5-5');
     expect(calls[0]!.effort).toBe('xhigh');
     expect(calls[0]!.thinking).toBe(true);
   });
 
-  it('passes reasoning effort on local image turns that fall back from the SDK to the CLI', async () => {
-    const calls: AmpExecutionOptions[] = [];
-    const sdkTransport: AmpTransport = {
-      name: 'sdk',
-      async *execute({ options }) {
-        calls.push(options);
-        yield { type: 'system', subtype: 'init', session_id: threadId };
-        yield { type: 'result', subtype: 'success', is_error: false };
-      },
-    };
-    const sdkAgent = new AmpAcpAgent(mockClient, sdkTransport, {
-      orbTransport: sdkTransport,
-      threadStore: {
-        load: async (sessionId) => mappings.get(sessionId) ?? null,
-        save: async (mapping) => {
-          mappings.set(mapping.sessionId, mapping);
-        },
-      },
+  it('narrows effort to the selected model and resets it when the model lacks it', async () => {
+    const modelAgent = new AmpAcpAgent(mockClient, createAmpTransport('sdk'), {
       discoverPluginModes: () => [],
-      discoverModels: () => [],
+      discoverModels: () => [
+        { modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'medium', 'high', 'max'] },
+        { modelId: 'zhipuai/glm-5.3-flash', name: 'GLM-5.3-Flash', efforts: ['low', 'high'] },
+      ],
     });
-    await sdkAgent.initialize({ protocolVersion: 1, clientCapabilities: {} });
-    const session = await sdkAgent.newSession({ cwd: '/tmp', mcpServers: [] });
-    await sdkAgent.setSessionConfigOption({
-      sessionId: session.sessionId,
-      configId: 'reasoning-effort',
-      value: 'high',
-    });
-    const image = { type: 'image' as const, mimeType: 'image/png', data: 'AQID' };
+    const session = await modelAgent.newSession({ cwd: '/tmp', mcpServers: [] });
+    const effortOption = (options: { id: string }[] | null | undefined) =>
+      options?.find((option) => option.id === 'reasoning-effort') as
+        { currentValue: string; options: { value: string }[] } | undefined;
 
-    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [image] });
-    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [{ type: 'text', text: 'hello' }] });
-    await sdkAgent.setSessionConfigOption({
-      sessionId: session.sessionId,
-      configId: 'execution-environment',
-      value: 'orb',
-    });
-    await sdkAgent.prompt({ sessionId: session.sessionId, prompt: [image] });
+    expect(effortOption(session.configOptions)?.options.map((option) => option.value)).toEqual(['auto']);
 
-    expect(calls.map((options) => options.effort)).toEqual(['high', undefined, undefined]);
+    await modelAgent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-model', value: 'anthropic/claude-opus-5-5' });
+    const withMax = await modelAgent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'reasoning-effort', value: 'max' });
+    expect(effortOption(withMax.configOptions)).toMatchObject({ currentValue: 'max' });
+    expect(effortOption(withMax.configOptions)?.options.map((option) => option.value)).toEqual(['auto', 'low', 'medium', 'high', 'max']);
+
+    const switched = await modelAgent.setSessionConfigOption({ sessionId: session.sessionId, configId: 'amp-model', value: 'zhipuai/glm-5.3-flash' });
+    expect(effortOption(switched.configOptions)).toMatchObject({ currentValue: 'auto' });
+    expect(effortOption(switched.configOptions)?.options.map((option) => option.value)).toEqual(['auto', 'low', 'high']);
   });
 
   it('omits effort when auto is selected and can disable thinking', async () => {

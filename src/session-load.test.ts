@@ -114,9 +114,10 @@ describe('AmpAcpAgent session/load', () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
-    await first.prompt({
+    await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      prompt: [{ type: 'text', text: 'hello' }],
+      configId: 'execution-environment',
+      value: 'orb',
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
@@ -125,18 +126,17 @@ describe('AmpAcpAgent session/load', () => {
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'permission',
-      value: 'bypass',
-    });
-    await first.setSessionConfigOption({
-      sessionId: session.sessionId,
       configId: 'reasoning-effort',
       value: 'xhigh',
     });
+    await first.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      configId: 'execution-environment',
-      value: 'orb',
+      configId: 'permission',
+      value: 'bypass',
     });
 
     const second = createAgent();
@@ -257,14 +257,19 @@ describe('AmpAcpAgent session/load', () => {
     const first = createAgent();
     await first.initialize({ protocolVersion: 1, clientCapabilities: {} });
     const session = await first.newSession({ cwd: '/tmp', mcpServers: [] });
-    await first.prompt({
+    await first.setSessionConfigOption({
       sessionId: session.sessionId,
-      prompt: [{ type: 'text', text: 'hello' }],
+      configId: 'execution-environment',
+      value: 'orb',
     });
     await first.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'amp-model',
       value: 'anthropic/claude-opus-5-5',
+    });
+    await first.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
     });
 
     const second = createAgent();

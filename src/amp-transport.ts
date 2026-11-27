@@ -54,10 +54,8 @@ export type AmpMcpConfig = Record<string, AmpMcpServerConfig>;
 export type AmpMode = string & {};
 
 /**
- * Amp reasoning effort. Effort is a thread feature, separate from model
- * selection: the model chooses what runs, effort chooses how much reasoning
- * it performs. The Amp CLI accepts it as the `--features effort:<level>`
- * thread feature used by this adapter.
+ * Amp reasoning effort, passed as `--effort <level>`. Amp accepts it only
+ * together with `--model`, and only when it creates the thread.
  */
 export type AmpEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -240,8 +238,11 @@ export function buildAmpCliArgs(options: AmpExecutionOptions): string[] {
   }
   args.push('--no-archive-after-execute');
   if (options.agentMode) args.push('--mode', options.agentMode);
-  if (options.model) args.push('--model', options.model);
-  if (options.effort) args.push('--features', `effort:${options.effort}`);
+  // Amp pins model and effort when it creates a thread and rejects both on `threads continue`.
+  if (options.model && !options.continue) {
+    args.push('--model', options.model);
+    if (options.effort) args.push('--effort', options.effort);
+  }
   if (options.dangerouslyAllowAll) args.push('--dangerously-allow-all');
   if (options.mcpConfig) args.push('--mcp-config', JSON.stringify(options.mcpConfig));
 

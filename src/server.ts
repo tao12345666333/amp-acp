@@ -230,6 +230,8 @@ interface AmpModel {
   modelId: string;
   name: string;
   description?: string;
+  /** Efforts Amp accepts for this model; unset when unknown. */
+  efforts?: string[];
 }
 
 function agentModeToModel(mode: PluginAgentMode): AmpModel {
@@ -266,7 +268,7 @@ const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 };
 
 const REASONING_EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
-  auto: "Use Amp's default effort for the selected mode.",
+  auto: "Use the model's default reasoning effort.",
   none: 'Do not request additional reasoning.',
   minimal: 'Minimal reasoning for the fastest responses.',
   low: 'Light reasoning for straightforward tasks.',
@@ -275,6 +277,21 @@ const REASONING_EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   xhigh: 'Extra-high reasoning for complex work.',
   max: 'Maximum reasoning effort.',
 };
+
+/**
+ * Efforts the selection accepts besides `auto`. Amp takes `--effort` only with
+ * `--model`, so Default and agent modes offer none. A model missing from
+ * discovery offers all of them and Amp validates the choice.
+ */
+function availableEfforts(s: Pick<SessionState, 'model' | 'models'>): ReasoningEffort[] {
+  if (!s.model) return [];
+  const efforts = s.models.find((model) => model.modelId === s.model)?.efforts;
+  return REASONING_EFFORTS.filter((effort) => effort !== 'auto' && (!efforts || efforts.includes(effort)));
+}
+
+function supportedEffort(s: Pick<SessionState, 'model' | 'models'>, effort: ReasoningEffort): ReasoningEffort {
+  return availableEfforts(s).includes(effort) ? effort : 'auto';
+}
 
 function buildSessionConfigOptions(
   s: Pick<SessionState, 'mode' | 'model' | 'agentMode' | 'models' | 'agentModes' | 'executor' | 'effort'>,
@@ -358,10 +375,10 @@ function buildSessionConfigOptions(
       type: 'select',
       id: CONFIG_REASONING_EFFORT,
       name: 'Reasoning Effort',
-      description: 'How much reasoning Amp should apply to local CLI turns for the selected mode.',
+      description: 'How much reasoning the selected model applies. Pick a model to choose an effort.',
       category: 'thought_level',
       currentValue: s.effort,
-      options: REASONING_EFFORTS.map((effort) => ({
+      options: (['auto', ...availableEfforts(s)] as const).map((effort) => ({
         value: effort,
         name: REASONING_EFFORT_LABELS[effort],
         description: REASONING_EFFORT_DESCRIPTIONS[effort],
@@ -469,7 +486,6 @@ export class AmpAcpAgent {
   private replayRetry: { attempts: number; delayMs: number };
   private discoverPluginModes: (cwd: string) => PluginAgentMode[];
   private discoverModels: (cwd: string) => DiscoveredAmpModel[];
-  private warnedUnsupportedEffort = false;
 
   constructor(
     client: AcpClient,
@@ -688,7 +704,7 @@ export class AmpAcpAgent {
       ...(agentMode ? { agentMode } : {}),
       models,
       agentModes,
-      effort: mapping.effort && isReasoningEffort(mapping.effort) ? mapping.effort : 'auto',
+      effort: mapping.effort && isReasoningEffort(mapping.effort) ? supportedEffort({ model, models }, mapping.effort) : 'auto',
       executor: mapping.executor && isExecutor(mapping.executor) ? mapping.executor : 'local',
       mcpConfig: convertAcpMcpServersToAmpConfig(params.mcpServers),
       cwd,
@@ -1070,20 +1086,14 @@ export class AmpAcpAgent {
 
     const transport = s.executor === 'orb' ? this.orbTransport : this.transport;
     if (transport.name === 'cli') s.processStarted = true;
-    const effort: AmpEffort | undefined = s.effort === 'auto' ? undefined : s.effort;
-    // Explicit models use the CLI even on the SDK transport. Preserve the
-    // existing effort support for local image turns as well.
-    const featuresSupported = transport.name === 'cli' || !!s.model || (hasImages && s.executor !== 'orb');
-    if (effort && !featuresSupported && !this.warnedUnsupportedEffort) {
-      this.warnedUnsupportedEffort = true;
-      console.error('[acp] reasoning effort is only supported by the CLI transport; ignoring it for this agent process');
-    }
+    // Effort needs a model, and explicit models always run through the CLI.
+    const effort: AmpEffort | undefined = s.model && s.effort !== 'auto' ? s.effort : undefined;
     const options: AmpExecutionOptions = {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       ...(s.agentMode ? { agentMode: s.agentMode } : {}),
       ...(s.model ? { model: s.model } : {}),
-      ...(effort && featuresSupported ? { effort } : {}),
+      ...(effort ? { effort } : {}),
       thinking: process.env.AMP_ACP_DISABLE_THINKING !== '1',
       executor: s.executor,
     };
@@ -1266,13 +1276,19 @@ export class AmpAcpAgent {
         break;
       }
       case CONFIG_REASONING_EFFORT:
-        if (!isReasoningEffort(params.value)) {
-          throw new Error(`Unsupported reasoning effort: ${params.value}`);
+        if (!isReasoningEffort(params.value) || supportedEffort({ model: next.model, models: s.models }, params.value) !== params.value) {
+          throw RequestError.invalidParams(undefined, `Unsupported reasoning effort for this model: ${params.value}`);
         }
         next.effort = params.value;
         break;
       default:
         throw new Error(`Unsupported config option: ${params.configId}`);
+    }
+    next.effort = supportedEffort({ model: next.model, models: s.models }, next.effort);
+
+    // Amp pins model and effort when it creates the thread; `threads continue` rejects both.
+    if (s.threadId && (next.model !== s.model || next.agentMode !== s.agentMode || next.effort !== s.effort)) {
+      throw RequestError.invalidParams(undefined, 'Amp fixes the model and reasoning effort when it creates the thread. Start a new session to change them.');
     }
 
     const changed = next.executor !== s.executor

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Apply the selected reasoning effort. amp-acp sent it as `--features effort:<value>`, which Amp ignores; it now passes `--effort <value>` with `--model` when Amp creates the thread.
+- Stop sending `--model` on continued turns. Amp rejects it on `threads continue` with "The --model flag is not enabled for your account". With a model selected, this broke each Orb turn after the first, and local turns that start a new CLI process, such as after `session/load` or a permission change.
+
+### Changed
+
+- The **Reasoning Effort** option lists only the efforts the selected model supports, read from `capabilities.efforts` in `amp plugins show-agent-options --json`. *Default* and agent modes offer only `auto`. Unsupported values return an invalid-params error.
+- Changing the model or effort after the thread exists returns an invalid-params error, because Amp fixes both when it creates the thread.
+
 ## 0.13.0 - 2026-11-15
 
 ### Changed

@@ -5,14 +5,21 @@ describe('parseShowAgentOptions', () => {
   it('parses the models array from amp plugins show-agent-options --json', () => {
     const output = JSON.stringify({
       models: [
-        { id: 'anthropic/claude-opus-5-5', name: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
+        {
+          id: 'anthropic/claude-opus-5-5',
+          name: 'claude-opus-5-5',
+          displayName: 'Claude Opus 5.5',
+          capabilities: { reasoning: true, efforts: ['low', 'high', 'max'] },
+        },
         { id: 'openai/gpt-6-sol', name: 'gpt-6-sol', displayName: 'GPT-6 Sol' },
+        { id: 'acme/no-reasoning', displayName: 'No Reasoning', capabilities: { reasoning: false } },
       ],
       tools: [{ id: 'create_file' }],
     });
     expect(parseShowAgentOptions(output)).toEqual([
-      { modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' },
+      { modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'high', 'max'] },
       { modelId: 'openai/gpt-6-sol', name: 'GPT-6 Sol' },
+      { modelId: 'acme/no-reasoning', name: 'No Reasoning', efforts: [] },
     ]);
   });
 

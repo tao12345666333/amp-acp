@@ -112,7 +112,7 @@ describe('ACP Protocol End-to-End', () => {
       (agentClient) => new AmpAcpAgent(agentClient, transport, {
         orbTransport: transport,
         discoverPluginModes: () => [],
-        discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
+        discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5', efforts: ['low', 'xhigh', 'max'] }],
       }),
     );
     app.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
@@ -326,6 +326,11 @@ describe('ACP Protocol End-to-End', () => {
       mcpServers: [],
     });
 
+    await agentConnection.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
+    });
     const result = await agentConnection.setSessionConfigOption({
       sessionId: session.sessionId,
       configId: 'reasoning-effort',
@@ -336,21 +341,19 @@ describe('ACP Protocol End-to-End', () => {
       currentValue: 'xhigh',
       options: [
         { value: 'auto', name: 'Auto' },
-        { value: 'none', name: 'None' },
-        { value: 'minimal', name: 'Minimal' },
         { value: 'low', name: 'Low' },
-        { value: 'medium', name: 'Medium' },
-        { value: 'high', name: 'High' },
         { value: 'xhigh', name: 'Extra high' },
         { value: 'max', name: 'Max' },
       ],
     });
 
-    await expect(agentConnection.setSessionConfigOption({
-      sessionId: session.sessionId,
-      configId: 'reasoning-effort',
-      value: 'turbo',
-    })).rejects.toThrow('Internal error');
+    for (const value of ['turbo', 'medium']) {
+      await expect(agentConnection.setSessionConfigOption({
+        sessionId: session.sessionId,
+        configId: 'reasoning-effort',
+        value,
+      })).rejects.toThrow('Invalid params');
+    }
   });
 
   it('should update the execution environment', async () => {
